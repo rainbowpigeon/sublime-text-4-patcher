@@ -19,3 +19,7 @@ or just
 ```pip3 install pefile```
 
 It's just for `pefile` which is indirectly used for version detection.
+
+## Screenshots
+
+![image](https://user-images.githubusercontent.com/16717153/132092852-a9141230-d3e7-4799-b552-45c79264eac5.png)
