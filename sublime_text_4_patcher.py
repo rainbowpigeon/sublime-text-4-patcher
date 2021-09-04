@@ -104,8 +104,8 @@ class Patch:
         end_offset = self.offset + len(self.new_bytes)
         logger.info(
             "Offset {:<8}: patching {} with {}".format(hex(self.offset),
-                                                    PrettyBytes(self.file.data[self.offset:end_offset]),
-                                                    PrettyBytes(self.new_bytes))
+                                                       PrettyBytes(self.file.data[self.offset:end_offset]),
+                                                       PrettyBytes(self.new_bytes))
         )
         self.file.data[self.offset:end_offset] = self.new_bytes
 
@@ -287,16 +287,20 @@ class PatchDB:
             self.DB["windows"]["x64"]["base"] = {
                 "license_check_ref": Patch(
                     Sig("E8 ? ? ? ? 48 8B 8B ? ? ? ? 85 C0", ref="call"),
-                    "ret0"),
+                    "ret0"
+                ),
                 "server_validate": Patch(
                     Sig("55 56 57 48 83 EC 30 48 8D 6C 24 ? 48 C7 45 ? ? ? ? ? 89 D6 48 89 CF 6A 28"),
-                    "ret1"),
+                    "ret1"
+                ),
                 "license_notify": Patch(
                     Sig("55 56 57 48 81 EC ? ? ? ? 48 8D AC 24 ? ? ? ? 0F 29 B5 ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 89 CF"),
-                    "ret0"),
+                    "ret0"
+                ),
                 "crash_reporter": Patch(
                     Sig("41 57 41 56 41 55 41 54 56 57 55 53 B8 ? ? ? ? E8 ? ? ? ? 48 29 C4 8A 84 24 ? ? ? ?"),
-                    "ret")
+                    "ret"
+                )
             }
 
             self.DB["windows"]["x64"]["dev"] = {
@@ -312,7 +316,7 @@ class PatchDB:
 
 def main():
     print("-" * 64)
-    print("Sublime Text v4109-4114 Windows x64 Patcher by rainbowpigeon")
+    print("Sublime Text v4107-4114 Windows x64 Patcher by rainbowpigeon")
     print("-" * 64)
 
     sublime_file_path = None
