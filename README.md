@@ -7,9 +7,15 @@ Credits for signatures and patching logic goes to https://github.com/leogx9r
 - Automatic version detection for stable/dev channels (4109-4114)
 - No host blocking needed
 - Enter any text as license
+- Disables crash report telemetry
+- Disables phoning home
 
 ## Requirements
 
-```pip install -r requirements.txt```
+```pip3 install -r requirements.txt```
+
+or just
+
+```pip3 install pefile```
 
 It's just for `pefile` which is indirectly used for version detection.
