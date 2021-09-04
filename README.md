@@ -1,10 +1,9 @@
 # sublime-text-4-patcher
-Python 3 patcher for Sublime Text v4113 Windows x64
+Python 3 patcher for Sublime Text v4109-4114 Windows x64
 
-Credits for signatures and patching logic goes entirely to https://github.com/leogx9r
+Credits for signatures and patching logic goes to https://github.com/leogx9r
 
 - Uses signatures instead of hardcoded offsets
-- Patcher only works on v4107 or v4113, Windows x64 (for now).
-- The signatures for v4109, v4110, v4111, v4112 are left as comments inside the script so technically you can edit them in yourself if you really wish to use and patch the older versions of Sublime Text.
+- Automatic version detection for stable/dev channels (4109-4114)
 - No host blocking needed
 - Enter any text as license
