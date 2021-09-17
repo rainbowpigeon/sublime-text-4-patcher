@@ -1,7 +1,7 @@
 # Credits to leogx9r for signatures and patching logic
 # Script by rainbowpigeon
 
-
+import os
 import re
 import pefile
 import logging
@@ -323,12 +323,13 @@ def main():
     sublime = None
 
     try:
-        sublime_file_path = input("Enter file path to sublime_text.exe: ")
+        sublime_folder_path = input("Enter folder path to sublime_text.exe: ")
     except KeyboardInterrupt:
         logger.warning("Exiting with KeyboardInterrupt")
         exit()
 
     try:
+        sublime_file_path=os.path.join(sublime_folder_path,'sublime_text.exe')
         sublime = File(sublime_file_path)
     except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
         logger.error(e)
