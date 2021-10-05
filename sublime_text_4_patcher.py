@@ -261,7 +261,7 @@ class Finder:
 
 class PatchDB:
     CHANNELS = {
-        "dev": (4109, 4110, 4111, 4112, 4114),
+        "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116),
         "stable": (4107, 4113),
     }
     VERSIONS = {}
