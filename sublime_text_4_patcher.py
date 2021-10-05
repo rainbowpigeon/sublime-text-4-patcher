@@ -316,7 +316,7 @@ class PatchDB:
 
 def main():
     print("-" * 64)
-    print("Sublime Text v4107-4114 Windows x64 Patcher by rainbowpigeon")
+    print("Sublime Text v4107-4116 Windows x64 Patcher by rainbowpigeon")
     print("-" * 64)
 
     sublime_file_path = None
