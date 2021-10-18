@@ -22,5 +22,6 @@ It's just for `pefile` which is indirectly used for version detection.
 
 ## Screenshots
 
-![image](https://user-images.githubusercontent.com/16717153/137696927-56d8b1b4-3aa0-4a83-a3d6-9fd961d36941.png)
+![image](https://user-images.githubusercontent.com/16717153/137697096-7324ac5d-f513-42fb-8364-84faf1efd757.png)
+
 
