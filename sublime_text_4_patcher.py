@@ -220,6 +220,8 @@ class Finder:
 
             matched_bytes = match.group(0)
             logger.info("Found {}: {}".format(ref.type, PrettyBytes(matched_bytes)))
+            
+            matched_bytes = matched_bytes[self.sig.offset:]
 
             rel_addr = self.get_addr(ref, matched_bytes)
             logger.info("Found relative address: {}".format(hex(rel_addr)))
@@ -261,7 +263,7 @@ class Finder:
 
 class PatchDB:
     CHANNELS = {
-        "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116),
+        "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116, 4117, 4118),
         "stable": (4107, 4113),
     }
     VERSIONS = {}
@@ -286,7 +288,7 @@ class PatchDB:
         if self.os == "windows":
             self.DB["windows"]["x64"]["base"] = {
                 "license_check_ref": Patch(
-                    Sig("E8 ? ? ? ? 48 8B 8B ? ? ? ? 85 C0", ref="call"),
+                    Sig("4C 8D 4D ? E8 ? ? ? ? ? 8B ? ? ? ? ? 85 C0", ref="call", offset=0x4),
                     "ret0"
                 ),
                 "server_validate": Patch(
@@ -316,7 +318,7 @@ class PatchDB:
 
 def main():
     print("-" * 64)
-    print("Sublime Text v4107-4116 Windows x64 Patcher by rainbowpigeon")
+    print("Sublime Text v4107-4118 Windows x64 Patcher by rainbowpigeon")
     print("-" * 64)
 
     sublime_file_path = None
