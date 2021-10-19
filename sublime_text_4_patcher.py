@@ -205,7 +205,7 @@ class Finder:
     def __init__(self, file: File, sig: Sig):
         self.file = file
         self.sig = sig
-        match = re.search(self.sig.pattern, self.file.data)
+        match = re.search(self.sig.pattern, self.file.data, flags=re.DOTALL)
         if not match:
             raise ValueError("Could not find signature: {}".format(self.sig))
 
