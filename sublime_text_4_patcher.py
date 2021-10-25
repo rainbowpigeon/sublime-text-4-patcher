@@ -263,7 +263,7 @@ class Finder:
 
 class PatchDB:
     CHANNELS = {
-        "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116, 4117, 4118),
+        "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116, 4117, 4118, 4119),
         "stable": (4107, 4113),
     }
     VERSIONS = {}
@@ -318,7 +318,7 @@ class PatchDB:
 
 def main():
     print("-" * 64)
-    print("Sublime Text v4107-4118 Windows x64 Patcher by rainbowpigeon")
+    print("Sublime Text v4107-4119 Windows x64 Patcher by rainbowpigeon")
     print("-" * 64)
 
     sublime_file_path = None
