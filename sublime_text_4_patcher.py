@@ -344,10 +344,23 @@ def main():
 
     version_sig = "48 8D 05 ? ? ? ? 48 8D 95 ? ? ? ? 48 89 02 48 8D 05 ? ? ? ? 48 89 42 08 48 8D 4D ? E8 ? ? ? ? B9"
     version = Sig(version_sig, ref="lea")
-    version = int(sublime.get_string(version))
-    logger.info("Sublime Text Version {} detected".format(version))
+    
+    try:
+        version = int(sublime.get_string(version))
+    except ValueError as e:
+        logger.error(e)
+        logger.error("Failed to automatically detect version")
+        exit(1)
+    else:
+        logger.info("Sublime Text Version {} detected".format(version))
 
-    patches = PatchDB("windows", "x64", version).get_patches()
+    try:
+        patches = PatchDB("windows", "x64", version).get_patches()
+    except KeyError:
+        logger.error("Version {} does not exist in the patch database".format(version))
+        logger.error("You can still manually add it into PatchDB's CHANNELS dictionary if you would like to test it out")
+        exit(1)
+
     for name, patch in patches.items():
         sublime.create_patch(patch)
 
