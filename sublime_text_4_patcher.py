@@ -5,6 +5,7 @@
 import re
 import pefile
 import logging
+import itertools
 from sys import exit
 from pathlib import Path
 
@@ -266,6 +267,11 @@ class PatchDB:
         "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116, 4117, 4118, 4119, 4120),
         "stable": (4107, 4113, 4121),
     }
+
+    all_versions = tuple(itertools.chain.from_iterable(CHANNELS.values()))
+    MIN_SUPPORTED = min(all_versions)
+    MAX_SUPPORTED = max(all_versions)
+
     VERSIONS = {}
     for channel, versions in CHANNELS.items():
         for version in versions:
@@ -318,7 +324,7 @@ class PatchDB:
 
 def main():
     print("-" * 64)
-    print("Sublime Text v4107-4121 Windows x64 Patcher by rainbowpigeon")
+    print("Sublime Text v{}-{} Windows x64 Patcher by rainbowpigeon".format(PatchDB.MIN_SUPPORTED, PatchDB.MAX_SUPPORTED))
     print("-" * 64)
 
     sublime_file_path = None
