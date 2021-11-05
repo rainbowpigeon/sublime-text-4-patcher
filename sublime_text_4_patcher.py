@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 # Credits to leogx9r for signatures and patching logic
 # Script by rainbowpigeon
 
@@ -14,7 +16,7 @@ class SpecialFormatter(logging.Formatter):
     FORMATS = {
         logging.ERROR: "[!] %(message)s",
         logging.INFO: "[+] %(message)s",
-        logging.DEBUG: "[*] %(message)s",
+        logging.DEBUG: "[=] %(message)s",
         logging.WARNING: "[-] %(message)s",
         "DEFAULT": "%(levelname)s: %(message)s",
     }
@@ -103,7 +105,7 @@ class Patch:
             self.file = file
             self.offset = Finder(self.file, self.sig).locate()
         end_offset = self.offset + len(self.new_bytes)
-        logger.info(
+        logger.debug(
             "Offset {:<8}: patching {} with {}".format(hex(self.offset),
                                                        PrettyBytes(self.file.data[self.offset:end_offset]),
                                                        PrettyBytes(self.new_bytes))
@@ -118,17 +120,17 @@ class File:
 
     NULL = b"\x00"
 
-    def __init__(self, filename: str):
-        self.filename = filename
-        self.check_existence()
+    def __init__(self, filepath: str):
+        self.filepath = filepath
+        self.path = self.check_path(filepath)
         self.pe = self.parse_pe()
         self.sections = {s.Name.strip(self.NULL).decode(): s for s in self.pe.sections}
+        self.pe.close()
 
         try:
-            with open(filename, 'rb') as file:
-                self.data = bytearray(file.read())
+            self.data = bytearray(self.path.read_bytes())
         except IOError:
-            raise IOError("{} is not a valid file".format(self.filename))
+            raise IOError("{} is not a valid file".format(self.filepath))
         else:
             self.patches = []
 
@@ -137,14 +139,16 @@ class File:
         self.patches.append(patch)
 
     def save(self):
-        new_filename = self.filename + "_patched"
+        backup_path = self.path.with_suffix(self.path.suffix+".bak")
+        logger.info("Backing up original file at {}".format(backup_path))
+        self.path.replace(backup_path)
+
         try:
-            with open(new_filename, "wb") as file:
-                file.write(self.data)
+            self.path.write_bytes(self.data)
         except IOError:
-            raise IOError("Error writing to new file {}".format(new_filename))
+            raise IOError("Error writing to new file {}".format(self.filepath))
         else:
-            logger.info("Patched file written at {} :)".format(new_filename))
+            logger.info("Patched file written at {}".format(self.filepath))
 
     def apply_all(self):
         logger.info("Applying all patches...")
@@ -155,16 +159,17 @@ class File:
     def get_string(self, sig: Sig):
         return Finder(self, sig).get_string()
 
-    def check_existence(self):
-        file = Path(self.filename)
-        if not file.exists():
-            raise FileNotFoundError("File {} does not exist".format(self.filename))
-        if not file.is_file():
-            raise FileNotFoundError("{} is a directory, not a file".format(self.filename))
+    def check_path(self, filepath):
+        path = Path(filepath)
+        if not path.exists():
+            raise FileNotFoundError("File {} does not exist".format(filepath))
+        if not path.is_file():
+            raise FileNotFoundError("{} is a directory, not a file".format(filepath))
+        return path
 
     def parse_pe(self):
         try:
-            pe = pefile.PE(self.filename, fast_load=True)
+            pe = pefile.PE(self.filepath, fast_load=True)
         except pefile.PEFormatError:
             raise pefile.PEFormatError("Not a valid Windows application")
 
@@ -176,7 +181,7 @@ class File:
         return pe
 
     def __str__(self):
-        return self.filename
+        return self.filepath
 
 
 class Ref:
@@ -217,15 +222,15 @@ class Finder:
             if not ref:
                 raise ValueError("Unsupported ref type {}".format(self.sig.ref))
 
-            logger.info("Processing ref for sig {}...".format(self.sig))
+            logger.debug("Processing ref for sig {}...".format(self.sig))
 
             matched_bytes = match.group(0)
-            logger.info("Found {}: {}".format(ref.type, PrettyBytes(matched_bytes)))
+            logger.debug("Found {}: {}".format(ref.type, PrettyBytes(matched_bytes)))
             
             matched_bytes = matched_bytes[self.sig.offset:]
 
             rel_addr = self.get_addr(ref, matched_bytes)
-            logger.info("Found relative address: {}".format(hex(rel_addr)))
+            logger.debug("Found relative address: {}".format(hex(rel_addr)))
 
             if ref.type == "lea":
                 self.offset = self.off_to_rva(".text")
@@ -234,7 +239,7 @@ class Finder:
             else:
                 self.offset = (self.offset + ref.total_size + rel_addr) % (16 ** 8)
 
-            logger.info("Determined actual offset: {}".format(hex(self.offset)))
+            logger.debug("Determined actual offset: {}".format(hex(self.offset)))
 
     def locate(self):
         return self.offset
@@ -367,8 +372,9 @@ def main():
     sublime.apply_all()
     sublime.save()
 
+    print("Enjoy! :)")
     print("-" * 64)
-    print("Report any issues at github.com/rainbowpigeon!")
+    print("Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!")
     print("-" * 64)
 
 
