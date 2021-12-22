@@ -20,8 +20,10 @@ or just
 
 It's just for `pefile` which is indirectly used for version detection.
 
+## Usage
+
+```python3 sublime_text_4_patcher.py```
+
 ## Screenshots
 
-![image](https://user-images.githubusercontent.com/16717153/137697489-e8e240af-b9e8-4964-b62a-a6862524e0ef.png)
-
-
+![image](https://user-images.githubusercontent.com/16717153/147089101-ada1e8fe-e101-47f1-8548-1f7f6dfaa85d.png)
