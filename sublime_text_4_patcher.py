@@ -5,6 +5,7 @@
 
 
 import re
+from ssl import PEM_cert_to_DER_cert
 import pefile
 import logging
 import itertools
@@ -118,11 +119,12 @@ class File:
     Loads file data
     """
 
+    SUBLIME_EXE_NAME = "sublime_text.exe"
     NULL = b"\x00"
 
     def __init__(self, filepath: str):
-        self.filepath = filepath
-        self.path = self.check_path(filepath)
+        self.filepath = filepath.strip("\"")
+        self.path = self.check_path()
         self.pe = self.parse_pe()
         self.sections = {s.Name.strip(self.NULL).decode(): s for s in self.pe.sections}
         self.pe.close()
@@ -130,7 +132,7 @@ class File:
         try:
             self.data = bytearray(self.path.read_bytes())
         except IOError:
-            raise IOError("{} is not a valid file".format(self.filepath))
+            raise IOError("{} is not a valid file".format(self.path))
         else:
             self.patches = []
 
@@ -141,14 +143,22 @@ class File:
     def save(self):
         backup_path = self.path.with_suffix(self.path.suffix+".bak")
         logger.info("Backing up original file at {}".format(backup_path))
-        self.path.replace(backup_path)
+
+        try:
+            self.path.replace(backup_path)
+        except PermissionError as e:
+            raise PermissionError("Permission denied renaming file to {}. Try running as Administrator".format(backup_path))
+        except IOError as e:
+            raise IOError("Error renaming file to {}".format(backup_path))
 
         try:
             self.path.write_bytes(self.data)
+        except PermissionError as e:
+            raise PermissionError("Permission denied writing to new file {}. Try running as Administrator.".format(self.path))
         except IOError:
-            raise IOError("Error writing to new file {}".format(self.filepath))
+            raise IOError("Error writing to new file {}".format(self.path))
         else:
-            logger.info("Patched file written at {}".format(self.filepath))
+            logger.info("Patched file written at {}".format(self.path))
 
     def apply_all(self):
         logger.info("Applying all patches...")
@@ -159,17 +169,23 @@ class File:
     def get_string(self, sig: Sig):
         return Finder(self, sig).get_string()
 
-    def check_path(self, filepath):
-        path = Path(filepath)
+    def check_path(self):
+        path = Path(self.filepath)
         if not path.exists():
-            raise FileNotFoundError("File {} does not exist".format(filepath))
+            raise FileNotFoundError("File {} does not exist".format(self.filepath))
         if not path.is_file():
-            raise FileNotFoundError("{} is a directory, not a file".format(filepath))
+            logger.warning("{} is a directory, not a file".format(self.filepath))
+            path = path / self.SUBLIME_EXE_NAME
+            logger.warning("Proceeding with assumed file path {}".format(path))
+            if not path.exists():
+                raise FileNotFoundError("File {} does not exist".format(path))
+            if not path.is_file():
+                raise FileNotFoundError("{} is a directory, not a file".format(path))
         return path
 
     def parse_pe(self):
         try:
-            pe = pefile.PE(self.filepath, fast_load=True)
+            pe = pefile.PE(self.path, fast_load=True)
         except pefile.PEFormatError:
             raise pefile.PEFormatError("Not a valid Windows application")
 
@@ -181,7 +197,7 @@ class File:
         return pe
 
     def __str__(self):
-        return self.filepath
+        return self.path
 
 
 class Ref:
@@ -370,7 +386,12 @@ def main():
         sublime.create_patch(patch)
 
     sublime.apply_all()
-    sublime.save()
+
+    try:
+        sublime.save()
+    except (IOError, PermissionError) as e:
+        logger.error(e)
+        exit(1)
 
     print("Enjoy! :)")
     print("-" * 64)
