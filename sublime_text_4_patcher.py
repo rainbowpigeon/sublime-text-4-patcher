@@ -5,7 +5,6 @@
 
 
 import re
-from ssl import PEM_cert_to_DER_cert
 import pefile
 import logging
 import itertools
