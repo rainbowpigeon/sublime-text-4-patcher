@@ -1,5 +1,5 @@
 # sublime-text-4-patcher
-Python 3 patcher for Sublime Text v4107-4128 Windows x64
+Python 3 patcher for Sublime Text v4107-4129 Windows x64
 
 Credits for signatures and patching logic goes to https://github.com/leogx9r
 
@@ -26,4 +26,4 @@ It's just for `pefile` which is indirectly used for version detection.
 
 ## Screenshots
 
-![image](https://user-images.githubusercontent.com/16717153/147089101-ada1e8fe-e101-47f1-8548-1f7f6dfaa85d.png)
+![Script in action](https://user-images.githubusercontent.com/16717153/147089101-ada1e8fe-e101-47f1-8548-1f7f6dfaa85d.png)
