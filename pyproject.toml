@@ -11,6 +11,7 @@ pefile = "~=2021.5.24"
 
 [tool.poetry.dev-dependencies]
 black = "^22.3.0"
+pre-commit = "^2.19.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
