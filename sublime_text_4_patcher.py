@@ -4,6 +4,7 @@
 # Script by rainbowpigeon
 
 
+import click
 import re
 import pefile
 import logging
@@ -402,22 +403,17 @@ class PatchDB:
             }
 
 
-def main():
+@click.command()
+@click.option(
+    "--path",
+    prompt="Enter file path to sublime_text.exe",
+    help="File path to sublime_text.exe",
+)
+def main(sublime_file_path: str):
     print("-" * 64)
     print(
         f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
     )
-
-    print("-" * 64)
-
-    sublime_file_path = None
-    sublime = None
-
-    try:
-        sublime_file_path = input("Enter file path to sublime_text.exe: ")
-    except KeyboardInterrupt:
-        logger.warning("Exiting with KeyboardInterrupt")
-        exit()
 
     try:
         sublime = File(sublime_file_path)
