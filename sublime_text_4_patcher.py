@@ -96,15 +96,15 @@ class Patch:
             self.offset = Finder(self.file, self.sig).locate()
 
         if patch_type not in Patch.patch_types:
-            raise ValueError("Unsupported patch type {}".format(patch_type))
+            raise ValueError(f"Unsupported patch type {patch_type}")
 
         self.patch_type = patch_type
         self.new_bytes = Patch.patch_types[self.patch_type]
 
     def apply(self, file=None):
-        if not hasattr(self, "file") and not file:
-            raise ValueError("No file provided")
-        elif not hasattr(self, "file") and file:
+        if not hasattr(self, "file"):
+            if not file:
+                raise ValueError("No file provided")
             self.file = file
             self.offset = Finder(self.file, self.sig).locate()
         end_offset = self.offset + len(self.new_bytes)
@@ -135,8 +135,8 @@ class File:
 
         try:
             self.data = bytearray(self.path.read_bytes())
-        except IOError:
-            raise IOError("{} is not a valid file".format(self.path))
+        except IOError as e:
+            raise IOError(f"{self.path} is not a valid file") from e
         else:
             self.patches = []
 
@@ -145,32 +145,30 @@ class File:
         self.patches.append(patch)
 
     def save(self):
-        backup_path = self.path.with_suffix(self.path.suffix + ".bak")
-        logger.info("Backing up original file at {}".format(backup_path))
+        backup_path = self.path.with_suffix(f"{self.path.suffix}.bak")
+        logger.info("Backing up original file at %s", backup_path)
 
         try:
             self.path.replace(backup_path)
         except PermissionError as e:
             raise PermissionError(
-                "Permission denied renaming file to {}. Try running as Administrator".format(
-                    backup_path
-                )
-            )
+                f"Permission denied renaming file to {backup_path}. Try running as Administrator"
+            ) from e
+
         except IOError as e:
-            raise IOError("Error renaming file to {}".format(backup_path))
+            raise IOError(f"Error renaming file to {backup_path}") from e
 
         try:
             self.path.write_bytes(self.data)
         except PermissionError as e:
             raise PermissionError(
-                "Permission denied writing to new file {}. Try running as Administrator.".format(
-                    self.path
-                )
-            )
-        except IOError:
-            raise IOError("Error writing to new file {}".format(self.path))
+                f"Permission denied writing to new file {self.path}. Try running as Administrator."
+            ) from e
+
+        except IOError as exc:
+            raise IOError(f"Error writing to new file {self.path}") from exc
         else:
-            logger.info("Patched file written at {}".format(self.path))
+            logger.info("Patched file written at %s", self.path)
 
     def apply_all(self):
         logger.info("Applying all patches...")
@@ -184,22 +182,22 @@ class File:
     def check_path(self):
         path = Path(self.filepath)
         if not path.exists():
-            raise FileNotFoundError("File {} does not exist".format(self.filepath))
+            raise FileNotFoundError(f"File {self.filepath} does not exist")
         if not path.is_file():
-            logger.warning("{} is a directory, not a file".format(self.filepath))
+            logger.warning("%s is a directory, not a file", self.filepath)
             path = path / self.SUBLIME_EXE_NAME
-            logger.warning("Proceeding with assumed file path {}".format(path))
+            logger.warning("Proceeding with assumed file path %s", path)
             if not path.exists():
-                raise FileNotFoundError("File {} does not exist".format(path))
+                raise FileNotFoundError(f"File {path} does not exist")
             if not path.is_file():
-                raise FileNotFoundError("{} is a directory, not a file".format(path))
+                raise FileNotFoundError(f"{path} is a directory, not a file")
         return path
 
     def parse_pe(self):
         try:
             pe = pefile.PE(self.path, fast_load=True)
-        except pefile.PEFormatError:
-            raise pefile.PEFormatError("Not a valid Windows application")
+        except pefile.PEFormatError as e:
+            raise pefile.PEFormatError("Not a valid Windows application") from e
 
         if pe.NT_HEADERS.Signature != 0x4550:
             raise pefile.PEFormatError("Not a valid PE")
@@ -241,24 +239,24 @@ class Finder:
         self.sig = sig
         match = re.search(self.sig.pattern, self.file.data, flags=re.DOTALL)
         if not match:
-            raise ValueError("Could not find signature: {}".format(self.sig))
+            raise ValueError(f"Could not find signature: {self.sig}")
 
         self.offset = match.start() + self.sig.offset
 
         if self.sig.ref:
             ref = self.ref_types.get(self.sig.ref)
             if not ref:
-                raise ValueError("Unsupported ref type {}".format(self.sig.ref))
+                raise ValueError(f"Unsupported ref type {self.sig.ref}")
 
-            logger.debug("Processing ref for sig {}...".format(self.sig))
+            logger.debug("Processing ref for sig %s...", self.sig)
 
-            matched_bytes = match.group(0)
-            logger.debug("Found {}: {}".format(ref.type, PrettyBytes(matched_bytes)))
+            matched_bytes = match[0]
+            logger.debug("Found %s: %s", ref.type, PrettyBytes(matched_bytes))
 
             matched_bytes = matched_bytes[self.sig.offset :]
 
             rel_addr = self.get_addr(ref, matched_bytes)
-            logger.debug("Found relative address: {}".format(hex(rel_addr)))
+            logger.debug("Found relative address: %s", hex(rel_addr))
 
             if ref.type == "lea":
                 self.offset = self.off_to_rva(".text")
@@ -267,15 +265,14 @@ class Finder:
             else:
                 self.offset = (self.offset + ref.total_size + rel_addr) % (16**8)
 
-            logger.debug("Determined actual offset: {}".format(hex(self.offset)))
+            logger.debug("Determined actual offset: %s", hex(self.offset))
 
     def locate(self):
         return self.offset
 
     def get_string(self):
         sample = self.file.data[self.offset : self.offset + self.STR_SAMPLE_LEN]
-        result = sample[: sample.find(self.NULL)].decode()
-        return result
+        return sample[: sample.find(self.NULL)].decode()
 
     def off_to_rva(self, section: str):
         return (
@@ -353,7 +350,7 @@ class PatchDB:
     def get_patches(self):
         return dict(
             self.DB[self.os][self.arch][self.channel],
-            **self.DB[self.os][self.arch]["base"]
+            **self.DB[self.os][self.arch]["base"],
         )
 
     def load(self):
@@ -408,10 +405,9 @@ class PatchDB:
 def main():
     print("-" * 64)
     print(
-        "Sublime Text v{}-{} Windows x64 Patcher by rainbowpigeon".format(
-            PatchDB.MIN_SUPPORTED, PatchDB.MAX_SUPPORTED
-        )
+        f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
     )
+
     print("-" * 64)
 
     sublime_file_path = None
@@ -439,12 +435,12 @@ def main():
         logger.error("Failed to automatically detect version")
         exit(1)
     else:
-        logger.info("Sublime Text Version {} detected".format(version))
+        logger.info("Sublime Text Version %d detected", version)
 
     try:
         patches = PatchDB("windows", "x64", version).get_patches()
     except KeyError:
-        logger.error("Version {} does not exist in the patch database".format(version))
+        logger.error("Version %d does not exist in the patch database", version)
         logger.error(
             "You can still manually add it into PatchDB's CHANNELS dictionary if you would like to test it out"
         )
