@@ -405,6 +405,7 @@ class PatchDB:
 
 @click.command()
 @click.option(
+    "-p",
     "--path",
     prompt="Enter file path to sublime_text.exe",
     help="File path to sublime_text.exe",
