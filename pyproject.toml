@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "sublime-text-4-patcher"
+version = "0.1.0"
+description = "Python 3 patcher for Sublime Text v4107-4134 Windows x64"
+authors = ["rainbowpigeon <16717153+rainbowpigeon@users.noreply.github.com>"]
+license = "GPLv3"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pefile = "~=2021.5.24"
+
+[tool.poetry.dev-dependencies]
+black = "^22.3.0"
+pre-commit = "^2.19.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -48,7 +48,7 @@ class PrettyBytes:
         self.bytes = _bytes
 
     def __str__(self):
-        return ''.join('\\x{:02x}'.format(b) for b in self.bytes)
+        return "".join("\\x{:02x}".format(b) for b in self.bytes)
 
 
 class Sig:
@@ -65,7 +65,10 @@ class Sig:
 
     @classmethod
     def process_wildcards(cls, pattern: str):
-        pattern = [re.escape(bytes.fromhex(byte)) if byte != "?" else cls.BYTE_RE for byte in pattern.split(" ")]
+        pattern = [
+            re.escape(bytes.fromhex(byte)) if byte != "?" else cls.BYTE_RE
+            for byte in pattern.split(" ")
+        ]
         return b"".join(pattern)
 
 
@@ -93,24 +96,26 @@ class Patch:
             self.offset = Finder(self.file, self.sig).locate()
 
         if patch_type not in Patch.patch_types:
-            raise ValueError("Unsupported patch type {}".format(patch_type))
+            raise ValueError(f"Unsupported patch type {patch_type}")
 
         self.patch_type = patch_type
         self.new_bytes = Patch.patch_types[self.patch_type]
 
     def apply(self, file=None):
-        if not hasattr(self, 'file') and not file:
-            raise ValueError("No file provided")
-        elif not hasattr(self, 'file') and file:
+        if not hasattr(self, "file"):
+            if not file:
+                raise ValueError("No file provided")
             self.file = file
             self.offset = Finder(self.file, self.sig).locate()
         end_offset = self.offset + len(self.new_bytes)
         logger.debug(
-            "Offset {:<8}: patching {} with {}".format(hex(self.offset),
-                                                       PrettyBytes(self.file.data[self.offset:end_offset]),
-                                                       PrettyBytes(self.new_bytes))
+            "Offset {:<8}: patching {} with {}".format(
+                hex(self.offset),
+                PrettyBytes(self.file.data[self.offset : end_offset]),
+                PrettyBytes(self.new_bytes),
+            )
         )
-        self.file.data[self.offset:end_offset] = self.new_bytes
+        self.file.data[self.offset : end_offset] = self.new_bytes
 
 
 class File:
@@ -122,7 +127,7 @@ class File:
     NULL = b"\x00"
 
     def __init__(self, filepath: str):
-        self.filepath = filepath.strip("\"")
+        self.filepath = filepath.strip('"')
         self.path = self.check_path()
         self.pe = self.parse_pe()
         self.sections = {s.Name.strip(self.NULL).decode(): s for s in self.pe.sections}
@@ -130,8 +135,8 @@ class File:
 
         try:
             self.data = bytearray(self.path.read_bytes())
-        except IOError:
-            raise IOError("{} is not a valid file".format(self.path))
+        except IOError as e:
+            raise IOError(f"{self.path} is not a valid file") from e
         else:
             self.patches = []
 
@@ -140,24 +145,30 @@ class File:
         self.patches.append(patch)
 
     def save(self):
-        backup_path = self.path.with_suffix(self.path.suffix+".bak")
-        logger.info("Backing up original file at {}".format(backup_path))
+        backup_path = self.path.with_suffix(f"{self.path.suffix}.bak")
+        logger.info("Backing up original file at %s", backup_path)
 
         try:
             self.path.replace(backup_path)
         except PermissionError as e:
-            raise PermissionError("Permission denied renaming file to {}. Try running as Administrator".format(backup_path))
+            raise PermissionError(
+                f"Permission denied renaming file to {backup_path}. Try running as Administrator"
+            ) from e
+
         except IOError as e:
-            raise IOError("Error renaming file to {}".format(backup_path))
+            raise IOError(f"Error renaming file to {backup_path}") from e
 
         try:
             self.path.write_bytes(self.data)
         except PermissionError as e:
-            raise PermissionError("Permission denied writing to new file {}. Try running as Administrator.".format(self.path))
-        except IOError:
-            raise IOError("Error writing to new file {}".format(self.path))
+            raise PermissionError(
+                f"Permission denied writing to new file {self.path}. Try running as Administrator."
+            ) from e
+
+        except IOError as exc:
+            raise IOError(f"Error writing to new file {self.path}") from exc
         else:
-            logger.info("Patched file written at {}".format(self.path))
+            logger.info("Patched file written at %s", self.path)
 
     def apply_all(self):
         logger.info("Applying all patches...")
@@ -171,27 +182,27 @@ class File:
     def check_path(self):
         path = Path(self.filepath)
         if not path.exists():
-            raise FileNotFoundError("File {} does not exist".format(self.filepath))
+            raise FileNotFoundError(f"File {self.filepath} does not exist")
         if not path.is_file():
-            logger.warning("{} is a directory, not a file".format(self.filepath))
+            logger.warning("%s is a directory, not a file", self.filepath)
             path = path / self.SUBLIME_EXE_NAME
-            logger.warning("Proceeding with assumed file path {}".format(path))
+            logger.warning("Proceeding with assumed file path %s", path)
             if not path.exists():
-                raise FileNotFoundError("File {} does not exist".format(path))
+                raise FileNotFoundError(f"File {path} does not exist")
             if not path.is_file():
-                raise FileNotFoundError("{} is a directory, not a file".format(path))
+                raise FileNotFoundError(f"{path} is a directory, not a file")
         return path
 
     def parse_pe(self):
         try:
             pe = pefile.PE(self.path, fast_load=True)
-        except pefile.PEFormatError:
-            raise pefile.PEFormatError("Not a valid Windows application")
+        except pefile.PEFormatError as e:
+            raise pefile.PEFormatError("Not a valid Windows application") from e
 
         if pe.NT_HEADERS.Signature != 0x4550:
             raise pefile.PEFormatError("Not a valid PE")
 
-        if pe.FILE_HEADER.Machine == 0x14c:
+        if pe.FILE_HEADER.Machine == 0x14C:
             raise pefile.PEFormatError("32 bit Sublime Text not supported")
         return pe
 
@@ -215,7 +226,7 @@ class Finder:
 
     ref_types = [
         Ref("call", 5),  # E8 | xx xx xx xx
-        Ref("lea", 7)  # LEA: 48 8D xx | xx xx xx xx
+        Ref("lea", 7),  # LEA: 48 8D xx | xx xx xx xx
     ]
 
     ref_types = {r.type: r for r in ref_types}
@@ -228,55 +239,62 @@ class Finder:
         self.sig = sig
         match = re.search(self.sig.pattern, self.file.data, flags=re.DOTALL)
         if not match:
-            raise ValueError("Could not find signature: {}".format(self.sig))
+            raise ValueError(f"Could not find signature: {self.sig}")
 
         self.offset = match.start() + self.sig.offset
 
         if self.sig.ref:
             ref = self.ref_types.get(self.sig.ref)
             if not ref:
-                raise ValueError("Unsupported ref type {}".format(self.sig.ref))
+                raise ValueError(f"Unsupported ref type {self.sig.ref}")
 
-            logger.debug("Processing ref for sig {}...".format(self.sig))
+            logger.debug("Processing ref for sig %s...", self.sig)
 
-            matched_bytes = match.group(0)
-            logger.debug("Found {}: {}".format(ref.type, PrettyBytes(matched_bytes)))
-            
-            matched_bytes = matched_bytes[self.sig.offset:]
+            matched_bytes = match[0]
+            logger.debug("Found %s: %s", ref.type, PrettyBytes(matched_bytes))
+
+            matched_bytes = matched_bytes[self.sig.offset :]
 
             rel_addr = self.get_addr(ref, matched_bytes)
-            logger.debug("Found relative address: {}".format(hex(rel_addr)))
+            logger.debug("Found relative address: %s", hex(rel_addr))
 
             if ref.type == "lea":
                 self.offset = self.off_to_rva(".text")
-                self.offset = (self.offset + ref.total_size + rel_addr) % (16 ** 8)
+                self.offset = (self.offset + ref.total_size + rel_addr) % (16**8)
                 self.offset = self.rva_to_off(".rdata")
             else:
-                self.offset = (self.offset + ref.total_size + rel_addr) % (16 ** 8)
+                self.offset = (self.offset + ref.total_size + rel_addr) % (16**8)
 
-            logger.debug("Determined actual offset: {}".format(hex(self.offset)))
+            logger.debug("Determined actual offset: %s", hex(self.offset))
 
     def locate(self):
         return self.offset
 
     def get_string(self):
-        sample = self.file.data[self.offset:self.offset + self.STR_SAMPLE_LEN]
-        result = sample[:sample.find(self.NULL)].decode()
-        return result
+        sample = self.file.data[self.offset : self.offset + self.STR_SAMPLE_LEN]
+        return sample[: sample.find(self.NULL)].decode()
 
     def off_to_rva(self, section: str):
-        return self.offset - self.file.sections[section].PointerToRawData + self.file.sections[section].VirtualAddress
+        return (
+            self.offset
+            - self.file.sections[section].PointerToRawData
+            + self.file.sections[section].VirtualAddress
+        )
 
     def rva_to_off(self, section: str):
-        return self.offset - self.file.sections[section].VirtualAddress + self.file.sections[section].PointerToRawData
+        return (
+            self.offset
+            - self.file.sections[section].VirtualAddress
+            + self.file.sections[section].PointerToRawData
+        )
 
     @staticmethod
     def bytes_to_int_LE(_bytes):
-        return int.from_bytes(_bytes, byteorder='little')
+        return int.from_bytes(_bytes, byteorder="little")
 
     @classmethod
     def get_addr(cls, ref: Ref, matched_bytes):
-        rel_addr = bytearray(matched_bytes[ref.op_size:ref.total_size])
+        rel_addr = bytearray(matched_bytes[ref.op_size : ref.total_size])
         # rel_addr.hex()
         # rel_addr.reverse()
         return cls.bytes_to_int_LE(rel_addr)
@@ -284,7 +302,29 @@ class Finder:
 
 class PatchDB:
     CHANNELS = {
-        "dev": (4109, 4110, 4111, 4112, 4114, 4115, 4116, 4117, 4118, 4119, 4120, 4122, 4123, 4124, 4125, 4127, 4128, 4129, 4130, 4131, 4134),
+        "dev": (
+            4109,
+            4110,
+            4111,
+            4112,
+            4114,
+            4115,
+            4116,
+            4117,
+            4118,
+            4119,
+            4120,
+            4122,
+            4123,
+            4124,
+            4125,
+            4127,
+            4128,
+            4129,
+            4130,
+            4131,
+            4134,
+        ),
         "stable": (4107, 4113, 4121, 4126),
     }
 
@@ -308,43 +348,66 @@ class PatchDB:
         self.load()
 
     def get_patches(self):
-        return dict(self.DB[self.os][self.arch][self.channel], **self.DB[self.os][self.arch]["base"])
+        return dict(
+            self.DB[self.os][self.arch][self.channel],
+            **self.DB[self.os][self.arch]["base"],
+        )
 
     def load(self):
         if self.os == "windows":
             self.DB["windows"]["x64"]["base"] = {
                 "license_check_ref": Patch(
-                    Sig("4C 8D 4D ? E8 ? ? ? ? ? 8B ? ? ? ? ? 85 C0", ref="call", offset=0x4),
-                    "ret0"
+                    Sig(
+                        "4C 8D 4D ? E8 ? ? ? ? ? 8B ? ? ? ? ? 85 C0",
+                        ref="call",
+                        offset=0x4,
+                    ),
+                    "ret0",
                 ),
                 "server_validate": Patch(
-                    Sig("55 56 57 48 83 EC 30 48 8D 6C 24 ? 48 C7 45 ? ? ? ? ? 89 D6 48 89 CF 6A 28"),
-                    "ret1"
+                    Sig(
+                        "55 56 57 48 83 EC 30 48 8D 6C 24 ? 48 C7 45 ? ? ? ? ? 89 D6 48 89 CF 6A 28"
+                    ),
+                    "ret1",
                 ),
                 "license_notify": Patch(
-                    Sig("55 56 57 48 81 EC ? ? ? ? 48 8D AC 24 ? ? ? ? 0F 29 B5 ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 89 CF"),
-                    "ret0"
+                    Sig(
+                        "55 56 57 48 81 EC ? ? ? ? 48 8D AC 24 ? ? ? ? 0F 29 B5 ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 89 CF"
+                    ),
+                    "ret0",
                 ),
                 "crash_reporter": Patch(
-                    Sig("41 57 41 56 41 55 41 54 56 57 55 53 B8 ? ? ? ? E8 ? ? ? ? 48 29 C4 8A 84 24 ? ? ? ?"),
-                    "ret"
-                )
+                    Sig(
+                        "41 57 41 56 41 55 41 54 56 57 55 53 B8 ? ? ? ? E8 ? ? ? ? 48 29 C4 8A 84 24 ? ? ? ?"
+                    ),
+                    "ret",
+                ),
             }
 
             self.DB["windows"]["x64"]["dev"] = {
-                "invalidate1_0x6": Patch(Sig("41 B8 ? ? ? ? E8 ? ? ? ? 48 8B 96 ? ? ? ?", offset=0x6), "nop"),
-                "invalidate2_0x6": Patch(Sig("41 B8 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? 48 89 F1", offset=0x6), "nop"),
+                "invalidate1_0x6": Patch(
+                    Sig("41 B8 ? ? ? ? E8 ? ? ? ? 48 8B 96 ? ? ? ?", offset=0x6), "nop"
+                ),
+                "invalidate2_0x6": Patch(
+                    Sig("41 B8 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? 48 89 F1", offset=0x6),
+                    "nop",
+                ),
             }
 
             self.DB["windows"]["x64"]["stable"] = {
-                "invalidate1_0x6": Patch(Sig("41 B8 ? ? ? ? E8 ? ? ? ? 49 8B 96", offset=0x6), "nop"),
+                "invalidate1_0x6": Patch(
+                    Sig("41 B8 ? ? ? ? E8 ? ? ? ? 49 8B 96", offset=0x6), "nop"
+                ),
                 "invalidate2": Patch(Sig("E8 ? ? ? ? E8 ? ? ? ? 4C 89 F1 E8"), "nop"),
             }
 
 
 def main():
     print("-" * 64)
-    print("Sublime Text v{}-{} Windows x64 Patcher by rainbowpigeon".format(PatchDB.MIN_SUPPORTED, PatchDB.MAX_SUPPORTED))
+    print(
+        f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
+    )
+
     print("-" * 64)
 
     sublime_file_path = None
@@ -364,7 +427,7 @@ def main():
 
     version_sig = "48 8D 05 ? ? ? ? 48 8D 95 ? ? ? ? 48 89 02 48 8D 05 ? ? ? ? 48 89 42 08 48 8D 4D ? E8 ? ? ? ? B9"
     version = Sig(version_sig, ref="lea")
-    
+
     try:
         version = int(sublime.get_string(version))
     except ValueError as e:
@@ -372,13 +435,15 @@ def main():
         logger.error("Failed to automatically detect version")
         exit(1)
     else:
-        logger.info("Sublime Text Version {} detected".format(version))
+        logger.info("Sublime Text Version %d detected", version)
 
     try:
         patches = PatchDB("windows", "x64", version).get_patches()
     except KeyError:
-        logger.error("Version {} does not exist in the patch database".format(version))
-        logger.error("You can still manually add it into PatchDB's CHANNELS dictionary if you would like to test it out")
+        logger.error("Version %d does not exist in the patch database", version)
+        logger.error(
+            "You can still manually add it into PatchDB's CHANNELS dictionary if you would like to test it out"
+        )
         exit(1)
 
     for name, patch in patches.items():
@@ -394,7 +459,9 @@ def main():
 
     print("Enjoy! :)")
     print("-" * 64)
-    print("Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!")
+    print(
+        "Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!"
+    )
     print("-" * 64)
 
 
