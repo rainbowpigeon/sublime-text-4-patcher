@@ -395,7 +395,7 @@ class PatchDB:
                     Sig("41 B8 98 3A 00 00 E8 ? ? ? ?", offset=0x6), "nop"
                 ),
             }
-            
+
             self.DB["windows"]["x64"]["dev"] = {}
             self.DB["windows"]["x64"]["stable"] = {}
 
@@ -456,6 +456,8 @@ def main():
         exit(1)
 
     print("Enjoy! :)")
+    print("-" * 64)
+    print("IMPORTANT: Remember to enter any text as the license key!")
     print("-" * 64)
     print(
         "Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!"

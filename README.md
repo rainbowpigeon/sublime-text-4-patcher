@@ -24,6 +24,8 @@ It's just for `pefile` which is indirectly used for version detection.
 
 ```python3 sublime_text_4_patcher.py```
 
+**IMPORTANT**: Remember to enter any text as the license key afterwards! For stable versions, you can accomplish this by going to Help > Enter License. 
+
 ## Screenshots
 
 ![Script in action](https://user-images.githubusercontent.com/16717153/147089101-ada1e8fe-e101-47f1-8548-1f7f6dfaa85d.png)
