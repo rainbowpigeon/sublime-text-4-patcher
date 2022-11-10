@@ -327,8 +327,11 @@ class PatchDB:
             4136,
             4137,
             4138,
+            4139,
+            4140,
+            4141,
         ),
-        "stable": (4107, 4113, 4121, 4126),
+        "stable": (4107, 4113, 4121, 4126, 4142),
     }
 
     all_versions = tuple(itertools.chain.from_iterable(CHANNELS.values()))
@@ -385,24 +388,16 @@ class PatchDB:
                     ),
                     "ret",
                 ),
-            }
-
-            self.DB["windows"]["x64"]["dev"] = {
                 "invalidate1_0x6": Patch(
-                    Sig("41 B8 ? ? ? ? E8 ? ? ? ? 48 8B 96 ? ? ? ?", offset=0x6), "nop"
+                    Sig("41 B8 88 13 00 00 E8 ? ? ? ?", offset=0x6), "nop"
                 ),
                 "invalidate2_0x6": Patch(
-                    Sig("41 B8 ? ? ? ? E8 ? ? ? ? E8 ? ? ? ? 48 89 F1", offset=0x6),
-                    "nop",
+                    Sig("41 B8 98 3A 00 00 E8 ? ? ? ?", offset=0x6), "nop"
                 ),
             }
-
-            self.DB["windows"]["x64"]["stable"] = {
-                "invalidate1_0x6": Patch(
-                    Sig("41 B8 ? ? ? ? E8 ? ? ? ? 49 8B 96", offset=0x6), "nop"
-                ),
-                "invalidate2": Patch(Sig("E8 ? ? ? ? E8 ? ? ? ? 4C 89 F1 E8"), "nop"),
-            }
+            
+            self.DB["windows"]["x64"]["dev"] = {}
+            self.DB["windows"]["x64"]["stable"] = {}
 
 
 def main():
