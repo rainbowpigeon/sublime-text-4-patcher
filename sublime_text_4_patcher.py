@@ -330,8 +330,17 @@ class PatchDB:
             4139,
             4140,
             4141,
+            #4145,
+            4146,
+            4147,
+            4148,
+            4149,
+            4150,
+            #4153,
+            #4154,
+            #4155,
         ),
-        "stable": (4107, 4113, 4121, 4126, 4142, 4143),
+        "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152),
     }
 
     all_versions = tuple(itertools.chain.from_iterable(CHANNELS.values()))
@@ -351,6 +360,7 @@ class PatchDB:
         self.os = os
         self.arch = arch
         self.channel = self.VERSIONS.get(version)
+        self.version = version
         self.load()
 
     def get_patches(self):
@@ -379,6 +389,7 @@ class PatchDB:
                 "license_notify": Patch(
                     Sig(
                         "55 56 57 48 81 EC ? ? ? ? 48 8D AC 24 ? ? ? ? 0F 29 B5 ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 89 CF"
+                        if self.version <= 4143 else "55 56 57 48 81 EC ? ? ? ? 48 8D AC 24 ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 89 CF"
                     ),
                     "ret0",
                 ),
