@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-# Credits to leogx9r for signatures and patching logic
+# Credits to leogx9r for most signatures and patching logic
 # Script by rainbowpigeon
 
 
@@ -11,6 +11,8 @@ import argparse
 import itertools
 from sys import exit
 from pathlib import Path
+from zipfile import ZipFile
+from typing import NamedTuple
 
 
 class SpecialFormatter(logging.Formatter):
@@ -127,8 +129,10 @@ class File:
     SUBLIME_EXE_NAME = "sublime_text.exe"
     NULL = b"\x00"
 
-    def __init__(self, filepath: str):
-        self.filepath = filepath.strip('"')
+    def __init__(self, filepath: str | Path):
+        self.filepath = filepath
+        if isinstance(filepath, str):
+            self.filepath = self.filepath.strip('"')
         self.path = self.check_path()
         self.pe = self.parse_pe()
         self.sections = {s.Name.strip(self.NULL).decode(): s for s in self.pe.sections}
@@ -401,7 +405,82 @@ class PatchDB:
             self.DB["windows"]["x64"]["stable"] = {}
 
 
+class Result(NamedTuple):
+    version: int = None
+    success: bool = False
+    e: Exception = ""
+
+    def __str__(self):
+        if self.success:
+            status = "Success"
+        else:
+            status = f"Fail: {self.e}"
+        return f"Version {self.version}: {status}"
+
+
+def process_file(filepath, force_patch_channel=None):
+    sublime = None
+    try:
+        sublime = File(filepath)
+    except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
+        logger.error(e)
+        return Result(e=e)
+
+    version_sig = "48 8D 05 ? ? ? ? 48 8D 95 ? ? ? ? 48 89 02 48 8D 05 ? ? ? ? 48 89 42 08 48 8D 4D ? E8 ? ? ? ? B9"
+    version = Sig(version_sig, ref="lea")
+
+    try:
+        version = int(sublime.get_string(version))
+    except ValueError as e:
+        logger.error(e)
+        logger.error("Failed to automatically detect version")
+        return Result(e=e)
+    else:
+        logger.info("Sublime Text version %d detected", version)
+
+    try:
+        patches = PatchDB("windows", "x64", version).get_patches()
+    except KeyError:
+        e = f"Version {version} does not exist in the patch database"
+        logger.error(e)
+        if force_patch_channel:
+            # try the latest version from the specified channel
+            forced_version = PatchDB.CHANNELS[force_patch_channel][-1]
+            logger.warning(
+                f"Force patching as {force_patch_channel} version {forced_version} anyway..."
+            )
+            patches = PatchDB("windows", "x64", forced_version).get_patches()
+        else:
+            logger.error(
+                "You can still use -f or manually add %d into PatchDB's CHANNELS dictionary if you would like to test it out",
+                version,
+            )
+            return Result(e=e, version=version)
+
+    try:
+        # TODO: rethink name placement
+        for name, patch in patches.items():
+            sublime.create_patch(patch)
+    except ValueError as e:
+        logger.error(e)
+        return Result(e=e, version=version)
+
+    sublime.apply_all()
+
+    try:
+        # TODO: return offsets
+        sublime.save()
+    except (IOError, PermissionError) as e:
+        logger.error(e)
+        return Result(e=e, version=version)
+    
+    return Result(success=True, version=version)
+
+
 def main():
+
+    BORDER_LEN = 64
+
     description = f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
     epilog = (
         "Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!"
@@ -413,7 +492,10 @@ def main():
         epilog=epilog,
     )
 
-    parser.add_argument("filepath", help="File path to sublime_text.exe", nargs="?")
+    group = parser.add_mutually_exclusive_group()
+    # optional positional argument
+    group.add_argument("filepath", help="File path to sublime_text.exe", nargs="?")
+    group.add_argument("-t", "--test", help="Folder path containing sublime_text_build_*_x64.zip files for batch testing", type=Path, metavar="FOLDERPATH")
     parser.add_argument(
         "-f",
         "--force",
@@ -423,10 +505,32 @@ def main():
     args = parser.parse_args()
     filepath = args.filepath
     force_patch_channel = args.force
+    test_path = args.test
 
-    logger.info("-" * 64)
+    logger.info("-" * BORDER_LEN)
     logger.info(description)
-    logger.info("-" * 64)
+    logger.info("-" * BORDER_LEN)
+
+
+    if test_path:
+        test_results = []
+        logger.info("Testing on %s...", test_path)
+        logger.info("-" * BORDER_LEN)
+
+        for file in test_path.glob("./sublime_text_build_*_x64.zip"):
+            folder = file.stem
+            with ZipFile(file) as zip:
+                # overwrites without confirmation
+                zip.extract("sublime_text.exe", test_path / folder)
+
+        for file in test_path.glob("./sublime_text_build_*_x64/sublime_text.exe"):
+            logger.info("Testing %s...", file)
+            result = process_file(file, force_patch_channel)
+            test_results.append(result)
+            logger.info("-" * BORDER_LEN)
+        for result in test_results:
+            logger.info(result)
+        exit()
 
     if not filepath:
         try:
@@ -435,60 +539,15 @@ def main():
             logger.warning("Exiting with KeyboardInterrupt")
             exit()
 
-    sublime = None
-    try:
-        sublime = File(filepath)
-    except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
-        logger.error(e)
-        exit(1)
+    result = process_file(filepath, force_patch_channel)
 
-    version_sig = "48 8D 05 ? ? ? ? 48 8D 95 ? ? ? ? 48 89 02 48 8D 05 ? ? ? ? 48 89 42 08 48 8D 4D ? E8 ? ? ? ? B9"
-    version = Sig(version_sig, ref="lea")
-
-    try:
-        version = int(sublime.get_string(version))
-    except ValueError as e:
-        logger.error(e)
-        logger.error("Failed to automatically detect version")
-        exit(1)
-    else:
-        logger.info("Sublime Text version %d detected", version)
-
-    try:
-        patches = PatchDB("windows", "x64", version).get_patches()
-    except KeyError:
-        logger.error("Version %d does not exist in the patch database", version)
-        if force_patch_channel:
-            # try the latest version from the specified channel
-            version = PatchDB.CHANNELS[force_patch_channel][-1]
-            logger.warning(
-                f"Force patching as {force_patch_channel} version {version} anyway..."
-            )
-            patches = PatchDB("windows", "x64", version).get_patches()
-        else:
-            logger.error(
-                "You can still use -f or manually add %d into PatchDB's CHANNELS dictionary if you would like to test it out",
-                version,
-            )
-            exit(1)
-
-    for name, patch in patches.items():
-        sublime.create_patch(patch)
-
-    sublime.apply_all()
-
-    try:
-        sublime.save()
-    except (IOError, PermissionError) as e:
-        logger.error(e)
-        exit(1)
-
-    logger.info("Enjoy! :)")
-    logger.info("-" * 64)
-    logger.info("IMPORTANT: Remember to enter any text as the license key!")
-    logger.info("-" * 64)
+    if result.success:
+        logger.info("Enjoy! :)")
+        logger.info("-" * BORDER_LEN)
+        logger.info("IMPORTANT: Remember to enter any text as the license key!")
+    logger.info("-" * BORDER_LEN)
     logger.info(epilog)
-    logger.info("-" * 64)
+    logger.info("-" * BORDER_LEN)
 
 
 if __name__ == "__main__":
