@@ -7,6 +7,7 @@
 import re
 import pefile
 import logging
+import argparse
 import itertools
 from sys import exit
 from pathlib import Path
@@ -401,24 +402,42 @@ class PatchDB:
 
 
 def main():
-    print("-" * 64)
-    print(
-        f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
+    description = f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
+    epilog = (
+        "Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!"
     )
 
-    print("-" * 64)
+    parser = argparse.ArgumentParser(
+        prog=Path(__file__).name,
+        description=description,
+        epilog=epilog,
+    )
 
-    sublime_file_path = None
+    parser.add_argument("filepath", help="File path to sublime_text.exe", nargs="?")
+    parser.add_argument(
+        "-f",
+        "--force",
+        help="Force patching even if detected Sublime Text version does not exist in the patch database",
+        choices=["stable", "dev"],
+    )
+    args = parser.parse_args()
+    filepath = args.filepath
+    force_patch_channel = args.force
+
+    logger.info("-" * 64)
+    logger.info(description)
+    logger.info("-" * 64)
+
+    if not filepath:
+        try:
+            filepath = input("Enter file path to sublime_text.exe: ")
+        except KeyboardInterrupt:
+            logger.warning("Exiting with KeyboardInterrupt")
+            exit()
+
     sublime = None
-
     try:
-        sublime_file_path = input("Enter file path to sublime_text.exe: ")
-    except KeyboardInterrupt:
-        logger.warning("Exiting with KeyboardInterrupt")
-        exit()
-
-    try:
-        sublime = File(sublime_file_path)
+        sublime = File(filepath)
     except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
         logger.error(e)
         exit(1)
@@ -433,16 +452,25 @@ def main():
         logger.error("Failed to automatically detect version")
         exit(1)
     else:
-        logger.info("Sublime Text Version %d detected", version)
+        logger.info("Sublime Text version %d detected", version)
 
     try:
         patches = PatchDB("windows", "x64", version).get_patches()
     except KeyError:
         logger.error("Version %d does not exist in the patch database", version)
-        logger.error(
-            "You can still manually add it into PatchDB's CHANNELS dictionary if you would like to test it out"
-        )
-        exit(1)
+        if force_patch_channel:
+            # try the latest version from the specified channel
+            version = PatchDB.CHANNELS[force_patch_channel][-1]
+            logger.warning(
+                f"Force patching as {force_patch_channel} version {version} anyway..."
+            )
+            patches = PatchDB("windows", "x64", version).get_patches()
+        else:
+            logger.error(
+                "You can still use -f or manually add %d into PatchDB's CHANNELS dictionary if you would like to test it out",
+                version,
+            )
+            exit(1)
 
     for name, patch in patches.items():
         sublime.create_patch(patch)
@@ -455,14 +483,12 @@ def main():
         logger.error(e)
         exit(1)
 
-    print("Enjoy! :)")
-    print("-" * 64)
-    print("IMPORTANT: Remember to enter any text as the license key!")
-    print("-" * 64)
-    print(
-        "Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!"
-    )
-    print("-" * 64)
+    logger.info("Enjoy! :)")
+    logger.info("-" * 64)
+    logger.info("IMPORTANT: Remember to enter any text as the license key!")
+    logger.info("-" * 64)
+    logger.info(epilog)
+    logger.info("-" * 64)
 
 
 if __name__ == "__main__":
