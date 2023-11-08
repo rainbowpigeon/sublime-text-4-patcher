@@ -9,6 +9,8 @@ Credits for most signatures and patching logic goes to https://github.com/leogx9
 - Enter any text as license
 - ~~Disables crash report telemetry~~
 - Disables phoning home
+- Minimal dependencies
+- Single Python file for convenience
 
 ## Requirements
 
@@ -22,7 +24,15 @@ It's just for `pefile` which is indirectly used for version detection.
 
 ## Usage
 
+### Input Prompt Mode
+
 ```python3 sublime_text_4_patcher.py```
+
+You will then be prompted to enter the file path to `sublime_text.exe`.
+
+### Command-Line Mode
+
+```python3 sublime_text_4_patcher.py <path_to_sublime_text.exe>```
 
 **IMPORTANT**: Remember to enter any text as the license key afterwards! For stable versions, you can accomplish this by going to Help > Enter License. 
 
