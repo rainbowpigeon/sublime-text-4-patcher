@@ -57,14 +57,15 @@ class PrettyBytes:
 class Sig:
     BYTE_RE = b".{1}"
 
-    def __init__(self, pattern: str, ref: str = "", offset: int = 0x0):
+    def __init__(self, pattern: str, ref: str = "", offset: int = 0x0, name: str = ""):
         self.raw_pattern = pattern
         self.pattern = self.process_wildcards(self.raw_pattern)
         self.ref = ref
         self.offset = offset
+        self.name = name
 
     def __str__(self):
-        return self.raw_pattern
+        return f"\"{self.name}\": {self.raw_pattern}"
 
     @classmethod
     def process_wildcards(cls, pattern: str):
@@ -112,13 +113,15 @@ class Patch:
             self.offset = Finder(self.file, self.sig).locate()
         end_offset = self.offset + len(self.new_bytes)
         logger.debug(
-            "Offset {:<8}: patching {} with {}".format(
+            "Offset {:<8}: {:<18}: patching {} with {}".format(
                 hex(self.offset),
+                self.sig.name,
                 PrettyBytes(self.file.data[self.offset : end_offset]),
                 PrettyBytes(self.new_bytes),
             )
         )
         self.file.data[self.offset : end_offset] = self.new_bytes
+        return self.offset
 
 
 class File:
@@ -177,9 +180,11 @@ class File:
 
     def apply_all(self):
         logger.info("Applying all patches...")
+        offsets = []
         for patch in self.patches:
-            patch.apply()
+            offsets.append(patch.apply())
         logger.info("All patches applied!")
+        return offsets
 
     def get_string(self, sig: Sig):
         return Finder(self, sig).get_string()
@@ -242,9 +247,13 @@ class Finder:
     def __init__(self, file: File, sig: Sig):
         self.file = file
         self.sig = sig
-        match = re.search(self.sig.pattern, self.file.data, flags=re.DOTALL)
+
+        it = re.finditer(self.sig.pattern, self.file.data, flags=re.DOTALL)
+        match = next(it, None)
         if not match:
-            raise ValueError(f"Could not find signature: {self.sig}")
+            raise ValueError(f"Could not find signature {self.sig}")
+        if next(it, None):
+            raise ValueError(f"Found multiple matches for signature {self.sig}")
 
         self.offset = match.start() + self.sig.offset
 
@@ -253,7 +262,7 @@ class Finder:
             if not ref:
                 raise ValueError(f"Unsupported ref type {self.sig.ref}")
 
-            logger.debug("Processing ref for sig %s...", self.sig)
+            logger.debug("Processing ref for signature %s...", self.sig)
 
             matched_bytes = match[0]
             logger.debug("Found %s: %s", ref.type, PrettyBytes(matched_bytes))
@@ -335,8 +344,21 @@ class PatchDB:
             4139,
             4140,
             4141,
+            4145,
+            4146,
+            4147,
+            4148,
+            4149,
+            4150,
+            4153,
+            4154,
+            4155,
+            4156,
+            4158,
+            4159,
+            4160,
         ),
-        "stable": (4107, 4113, 4121, 4126, 4142, 4143),
+        "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152),
     }
 
     all_versions = tuple(itertools.chain.from_iterable(CHANNELS.values()))
@@ -359,63 +381,75 @@ class PatchDB:
         self.load()
 
     def get_patches(self):
-        return dict(
-            self.DB[self.os][self.arch][self.channel],
-            **self.DB[self.os][self.arch]["base"],
+        return (
+            self.DB[self.os][self.arch]["base"]
+            + self.DB[self.os][self.arch][self.channel]
         )
 
     def load(self):
         if self.os == "windows":
-            self.DB["windows"]["x64"]["base"] = {
-                "license_check_ref": Patch(
+            self.DB["windows"]["x64"]["base"] = (
+                Patch(
                     Sig(
                         "4C 8D 4D ? E8 ? ? ? ? ? 8B ? ? ? ? ? 85 C0",
                         ref="call",
                         offset=0x4,
+                        name="license_check_ref",
                     ),
                     "ret0",
                 ),
-                "server_validate": Patch(
+                Patch(
                     Sig(
-                        "55 56 57 48 83 EC 30 48 8D 6C 24 ? 48 C7 45 ? ? ? ? ? 89 D6 48 89 CF 6A 28"
+                        "55 56 57 48 83 EC 30 48 8D 6C 24 ? 48 C7 45 ? ? ? ? ? 89 D6 48 89 CF 6A 28",
+                        name="server_validate",
                     ),
                     "ret1",
                 ),
-                "license_notify": Patch(
+                Patch(
                     Sig(
-                        "55 56 57 48 81 EC ? ? ? ? 48 8D AC 24 ? ? ? ? 0F 29 B5 ? ? ? ? 48 C7 85 ? ? ? ? ? ? ? ? 48 89 CF"
+                        "55 56 57 48 81 EC ? 03 ? ? 48 8D AC 24 ? ? ? ?",
+                        name="license_notify",
                     ),
                     "ret0",
                 ),
-                "crash_reporter": Patch(
+                # TODO: investigate switch to crashpad in 4153
+                # Patch(
+                #     Sig(
+                #         "41 57 41 56 41 55 41 54 56 57 55 53 B8 ? ? ? ? E8 ? ? ? ? 48 29 C4 8A 84 24 ? ? ? ?",
+                #         name="crash_reporter",
+                #     ),
+                #     "ret",
+                # ),
+                Patch(
                     Sig(
-                        "41 57 41 56 41 55 41 54 56 57 55 53 B8 ? ? ? ? E8 ? ? ? ? 48 29 C4 8A 84 24 ? ? ? ?"
+                        "41 B8 88 13 00 00 E8 ? ? ? ?",
+                        offset=0x6,
+                        name="invalidate1_0x6",
                     ),
-                    "ret",
+                    "nop",
                 ),
-                "invalidate1_0x6": Patch(
-                    Sig("41 B8 88 13 00 00 E8 ? ? ? ?", offset=0x6), "nop"
+                Patch(
+                    Sig(
+                        "41 B8 98 3A 00 00 E8 ? ? ? ?",
+                        offset=0x6,
+                        name="invalidate2_0x6",
+                    ),
+                    "nop",
                 ),
-                "invalidate2_0x6": Patch(
-                    Sig("41 B8 98 3A 00 00 E8 ? ? ? ?", offset=0x6), "nop"
-                ),
-            }
+            )
 
-            self.DB["windows"]["x64"]["dev"] = {}
-            self.DB["windows"]["x64"]["stable"] = {}
+            self.DB["windows"]["x64"]["dev"] = ()
+            self.DB["windows"]["x64"]["stable"] = ()
 
 
 class Result(NamedTuple):
     version: int = None
     success: bool = False
-    e: Exception = ""
+    info: str = ""
 
     def __str__(self):
-        if self.success:
-            status = "Success"
-        else:
-            status = f"Fail: {self.e}"
-        return f"Version {self.version}: {status}"
+        status = "Success" if self.success else "Fail"
+        return f"Version {self.version}: {status}: {self.info}"
 
 
 def process_file(filepath, force_patch_channel=None):
@@ -424,17 +458,17 @@ def process_file(filepath, force_patch_channel=None):
         sublime = File(filepath)
     except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
         logger.error(e)
-        return Result(e=e)
+        return Result(info=e)
 
     version_sig = "48 8D 05 ? ? ? ? 48 8D 95 ? ? ? ? 48 89 02 48 8D 05 ? ? ? ? 48 89 42 08 48 8D 4D ? E8 ? ? ? ? B9"
-    version = Sig(version_sig, ref="lea")
+    version = Sig(version_sig, ref="lea", name="version")
 
     try:
         version = int(sublime.get_string(version))
     except ValueError as e:
         logger.error(e)
         logger.error("Failed to automatically detect version")
-        return Result(e=e)
+        return Result(info=e)
     else:
         logger.info("Sublime Text version %d detected", version)
 
@@ -455,30 +489,27 @@ def process_file(filepath, force_patch_channel=None):
                 "You can still use -f or manually add %d into PatchDB's CHANNELS dictionary if you would like to test it out",
                 version,
             )
-            return Result(e=e, version=version)
+            return Result(info=e, version=version)
 
     try:
-        # TODO: rethink name placement
-        for name, patch in patches.items():
+        for patch in patches:
             sublime.create_patch(patch)
     except ValueError as e:
         logger.error(e)
-        return Result(e=e, version=version)
+        return Result(info=e, version=version)
 
-    sublime.apply_all()
+    offsets = sublime.apply_all()
 
     try:
-        # TODO: return offsets
         sublime.save()
     except (IOError, PermissionError) as e:
         logger.error(e)
-        return Result(e=e, version=version)
-    
-    return Result(success=True, version=version)
+        return Result(info=e, version=version)
+
+    return Result(success=True, info=[hex(o) for o in offsets], version=version)
 
 
 def main():
-
     BORDER_LEN = 64
 
     description = f"Sublime Text v{PatchDB.MIN_SUPPORTED}-{PatchDB.MAX_SUPPORTED} Windows x64 Patcher by rainbowpigeon"
@@ -495,7 +526,13 @@ def main():
     group = parser.add_mutually_exclusive_group()
     # optional positional argument
     group.add_argument("filepath", help="File path to sublime_text.exe", nargs="?")
-    group.add_argument("-t", "--test", help="Folder path containing sublime_text_build_*_x64.zip files for batch testing", type=Path, metavar="FOLDERPATH")
+    group.add_argument(
+        "-t",
+        "--test",
+        help="Folder path containing sublime_text_build_*_x64.zip files for batch testing",
+        type=Path,
+        metavar="FOLDERPATH",
+    )
     parser.add_argument(
         "-f",
         "--force",
@@ -511,12 +548,12 @@ def main():
     logger.info(description)
     logger.info("-" * BORDER_LEN)
 
-
     if test_path:
         test_results = []
         logger.info("Testing on %s...", test_path)
         logger.info("-" * BORDER_LEN)
 
+        # TODO: error handling
         for file in test_path.glob("./sublime_text_build_*_x64.zip"):
             folder = file.stem
             with ZipFile(file) as zip:
