@@ -15,6 +15,9 @@ from zipfile import ZipFile
 from typing import NamedTuple, Union
 
 
+TARGET_PROGRAM = "sublime_text.exe"
+
+
 class SpecialFormatter(logging.Formatter):
     FORMATS = {
         logging.ERROR: "[!] %(message)s",
@@ -129,7 +132,6 @@ class File:
     Loads file data
     """
 
-    SUBLIME_EXE_NAME = "sublime_text.exe"
     NULL = b"\x00"
 
     def __init__(self, filepath: Union[str,Path]):
@@ -173,8 +175,8 @@ class File:
                 f"Permission denied writing to new file {self.path}. Try running as Administrator."
             ) from e
 
-        except IOError as exc:
-            raise IOError(f"Error writing to new file {self.path}") from exc
+        except IOError as e:
+            raise IOError(f"Error writing to new file {self.path}") from e
         else:
             logger.info("Patched file written at %s", self.path)
 
@@ -195,7 +197,7 @@ class File:
             raise FileNotFoundError(f"File {self.filepath} does not exist")
         if not path.is_file():
             logger.warning("%s is a directory, not a file", self.filepath)
-            path = path / self.SUBLIME_EXE_NAME
+            path = path / TARGET_PROGRAM
             logger.warning("Proceeding with assumed file path %s", path)
             if not path.exists():
                 raise FileNotFoundError(f"File {path} does not exist")
@@ -525,13 +527,13 @@ def main():
 
     group = parser.add_mutually_exclusive_group()
     # optional positional argument
-    group.add_argument("filepath", help="File path to sublime_text.exe", nargs="?")
+    group.add_argument("filepath", help=f"File path to {TARGET_PROGRAM}", nargs="?")
     group.add_argument(
         "-t",
         "--test",
-        help="Folder path containing sublime_text_build_*_x64.zip files for batch testing",
+        help="Directory path containing sublime_text_build_*_x64.zip files for batch testing",
         type=Path,
-        metavar="FOLDERPATH",
+        metavar="DIRPATH",
     )
     parser.add_argument(
         "-f",
@@ -550,17 +552,24 @@ def main():
 
     if test_path:
         test_results = []
-        logger.info("Testing on %s...", test_path)
+        logger.info("Testing using directory %s...", test_path)
         logger.info("-" * BORDER_LEN)
 
-        # TODO: error handling
+        if not test_path.exists():
+            logger.error("Test directory %s does not exist", test_path)
+            exit(1)
+
+        if not test_path.is_dir():
+            logger.error("Test path %s is not a directory", test_path)
+            exit(1)
+
         for file in test_path.glob("./sublime_text_build_*_x64.zip"):
-            folder = file.stem
+            subdir = file.stem
             with ZipFile(file) as zip:
                 # overwrites without confirmation
-                zip.extract("sublime_text.exe", test_path / folder)
+                zip.extract(TARGET_PROGRAM, test_path / subdir)
 
-        for file in test_path.glob("./sublime_text_build_*_x64/sublime_text.exe"):
+        for file in test_path.glob(f"./sublime_text_build_*_x64/{TARGET_PROGRAM}"):
             logger.info("Testing %s...", file)
             result = process_file(file, force_patch_channel)
             test_results.append(result)
@@ -571,7 +580,7 @@ def main():
 
     if not filepath:
         try:
-            filepath = input("Enter file path to sublime_text.exe: ")
+            filepath = input(f"Enter file path to {TARGET_PROGRAM}: ")
         except KeyboardInterrupt:
             logger.warning("Exiting with KeyboardInterrupt")
             exit()
