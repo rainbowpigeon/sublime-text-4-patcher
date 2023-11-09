@@ -12,7 +12,7 @@ import itertools
 from sys import exit
 from pathlib import Path
 from zipfile import ZipFile
-from typing import NamedTuple
+from typing import NamedTuple, Union
 
 
 class SpecialFormatter(logging.Formatter):
@@ -132,7 +132,7 @@ class File:
     SUBLIME_EXE_NAME = "sublime_text.exe"
     NULL = b"\x00"
 
-    def __init__(self, filepath: str | Path):
+    def __init__(self, filepath: Union[str,Path]):
         self.filepath = filepath
         if isinstance(filepath, str):
             self.filepath = self.filepath.strip('"')
