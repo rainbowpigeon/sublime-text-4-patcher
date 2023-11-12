@@ -50,7 +50,7 @@ logger.addHandler(c_handler)
 
 
 class PrettyBytes:
-    def __init__(self, _bytes):
+    def __init__(self, _bytes: str):
         self.bytes = _bytes
 
     def __str__(self):
@@ -68,7 +68,7 @@ class Sig:
         self.name = name
 
     def __str__(self):
-        return f"\"{self.name}\": {self.raw_pattern}"
+        return f'"{self.name}": {self.raw_pattern}'
 
     @classmethod
     def process_wildcards(cls, pattern: str):
@@ -96,7 +96,7 @@ class Patch:
 
     patch_types.update((k, bytes.fromhex(v)) for k, v in patch_types.items())
 
-    def __init__(self, sig: Sig, patch_type: str, file=None):
+    def __init__(self, sig: Sig, patch_type: str, file: "File" = None):
         self.sig = sig
         if file:
             self.file = file
@@ -108,7 +108,7 @@ class Patch:
         self.patch_type = patch_type
         self.new_bytes = Patch.patch_types[self.patch_type]
 
-    def apply(self, file=None):
+    def apply(self, file: "File" = None):
         if not hasattr(self, "file"):
             if not file:
                 raise ValueError("No file provided")
@@ -134,7 +134,7 @@ class File:
 
     NULL = b"\x00"
 
-    def __init__(self, filepath: Union[str,Path]):
+    def __init__(self, filepath: Union[str, Path]):
         self.filepath = filepath
         if isinstance(filepath, str):
             self.filepath = self.filepath.strip('"')
@@ -144,11 +144,13 @@ class File:
         self.pe.close()
 
         try:
+            # TODO: consider memoryview
             self.data = bytearray(self.path.read_bytes())
         except IOError as e:
             raise IOError(f"{self.path} is not a valid file") from e
         else:
             self.patches = []
+            self.patched_offsets = []
 
     def create_patch(self, patch: Patch):
         patch.__init__(patch.sig, patch.patch_type, self)
@@ -180,13 +182,12 @@ class File:
         else:
             logger.info("Patched file written at %s", self.path)
 
-    def apply_all(self):
+    def apply_all_patches(self):
         logger.info("Applying all patches...")
-        offsets = []
         for patch in self.patches:
-            offsets.append(patch.apply())
+            self.patched_offsets.append(patch.apply())
         logger.info("All patches applied!")
-        return offsets
+        return self.patched_offsets
 
     def get_string(self, sig: Sig):
         return Finder(self, sig).get_string()
@@ -236,10 +237,10 @@ class Finder:
     Determines correct offset
     """
 
-    ref_types = [
+    ref_types = (
         Ref("call", 5),  # E8 | xx xx xx xx
         Ref("lea", 7),  # LEA: 48 8D xx | xx xx xx xx
-    ]
+    )
 
     ref_types = {r.type: r for r in ref_types}
 
@@ -275,11 +276,13 @@ class Finder:
             logger.debug("Found relative address: %s", hex(rel_addr))
 
             if ref.type == "lea":
-                self.offset = self.off_to_rva(".text")
-                self.offset = (self.offset + ref.total_size + rel_addr) % (16**8)
-                self.offset = self.rva_to_off(".rdata")
+                self.offset = self.off_to_rva(self.offset, ".text")
+                self.offset = self.offset + ref.total_size + rel_addr
+                self.offset = self.rva_to_off(self.offset, ".rdata")
             else:
-                self.offset = (self.offset + ref.total_size + rel_addr) % (16**8)
+                self.offset = self.offset + ref.total_size + rel_addr
+
+            self.offset %= 2**32
 
             logger.debug("Determined actual offset: %s", hex(self.offset))
 
@@ -290,30 +293,24 @@ class Finder:
         sample = self.file.data[self.offset : self.offset + self.STR_SAMPLE_LEN]
         return sample[: sample.find(self.NULL)].decode()
 
-    def off_to_rva(self, section: str):
+    def off_to_rva(self, value: int, section: str):
         return (
-            self.offset
+            value
             - self.file.sections[section].PointerToRawData
             + self.file.sections[section].VirtualAddress
         )
 
-    def rva_to_off(self, section: str):
+    def rva_to_off(self, value: int, section: str):
         return (
-            self.offset
+            value
             - self.file.sections[section].VirtualAddress
             + self.file.sections[section].PointerToRawData
         )
 
-    @staticmethod
-    def bytes_to_int_LE(_bytes):
-        return int.from_bytes(_bytes, byteorder="little")
-
     @classmethod
     def get_addr(cls, ref: Ref, matched_bytes):
-        rel_addr = bytearray(matched_bytes[ref.op_size : ref.total_size])
-        # rel_addr.hex()
-        # rel_addr.reverse()
-        return cls.bytes_to_int_LE(rel_addr)
+        rel_addr = matched_bytes[ref.op_size : ref.total_size]
+        return int.from_bytes(rel_addr, byteorder="little")
 
 
 class PatchDB:
@@ -500,7 +497,7 @@ def process_file(filepath, force_patch_channel=None):
         logger.error(e)
         return Result(info=e, version=version)
 
-    offsets = sublime.apply_all()
+    offsets = sublime.apply_all_patches()
 
     try:
         sublime.save()
@@ -508,7 +505,7 @@ def process_file(filepath, force_patch_channel=None):
         logger.error(e)
         return Result(info=e, version=version)
 
-    return Result(success=True, info=[hex(o) for o in offsets], version=version)
+    return Result(success=True, info=[hex(o) for o in sorted(offsets)], version=version)
 
 
 def main():
@@ -551,17 +548,16 @@ def main():
     logger.info("-" * BORDER_LEN)
 
     if test_path:
-        test_results = []
         logger.info("Testing using directory %s...", test_path)
         logger.info("-" * BORDER_LEN)
 
         if not test_path.exists():
             logger.error("Test directory %s does not exist", test_path)
-            exit(1)
+            return 1
 
         if not test_path.is_dir():
             logger.error("Test path %s is not a directory", test_path)
-            exit(1)
+            return 1
 
         for file in test_path.glob("./sublime_text_build_*_x64.zip"):
             subdir = file.stem
@@ -569,6 +565,7 @@ def main():
                 # overwrites without confirmation
                 zip.extract(TARGET_PROGRAM, test_path / subdir)
 
+        test_results = []
         for file in test_path.glob(f"./sublime_text_build_*_x64/{TARGET_PROGRAM}"):
             logger.info("Testing %s...", file)
             result = process_file(file, force_patch_channel)
@@ -576,14 +573,15 @@ def main():
             logger.info("-" * BORDER_LEN)
         for result in test_results:
             logger.info(result)
-        exit()
+
+        return
 
     if not filepath:
         try:
             filepath = input(f"Enter file path to {TARGET_PROGRAM}: ")
         except KeyboardInterrupt:
             logger.warning("Exiting with KeyboardInterrupt")
-            exit()
+            return 1
 
     result = process_file(filepath, force_patch_channel)
 
@@ -595,6 +593,8 @@ def main():
     logger.info(epilog)
     logger.info("-" * BORDER_LEN)
 
+    return 0 if result.success else 1
+
 
 if __name__ == "__main__":
-    main()
+    exit(main())
