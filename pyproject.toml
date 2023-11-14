@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "sublime-text-4-patcher"
 version = "0.1.0"
-description = "Python 3 patcher for Sublime Text v4107-4134 Windows x64"
+description = "Python 3 patcher for Sublime Text v4107-4164 Windows x64"
 authors = ["rainbowpigeon <16717153+rainbowpigeon@users.noreply.github.com>"]
 license = "GPLv3"
 
