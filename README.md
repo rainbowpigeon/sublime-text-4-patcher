@@ -67,4 +67,8 @@ Report any issues at github.com/rainbowpigeon/sublime-text-4-patcher/issues!
 
 ## Screenshots
 
-![Script in action](https://user-images.githubusercontent.com/16717153/147089101-ada1e8fe-e101-47f1-8548-1f7f6dfaa85d.png)
+![Script execution in input prompt mode](https://github.com/rainbowpigeon/sublime-text-4-patcher/assets/113040852/a39a5c0b-71b1-4979-8495-2e62876949ae)
+
+### Test Mode Results
+
+![Script results in test mode](https://github.com/rainbowpigeon/sublime-text-4-patcher/assets/113040852/eedb89b5-ecde-427f-8684-9354e0341fed)
