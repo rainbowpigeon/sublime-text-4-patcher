@@ -100,7 +100,7 @@ class Patch:
         self.sig = sig
         if file:
             self.file = file
-            self.offset = Finder(self.file, self.sig).locate()
+            self.offset = Finder(self.file, self.sig).find()
 
         if patch_type not in Patch.patch_types:
             raise ValueError(f"Unsupported patch type {patch_type}")
@@ -113,7 +113,7 @@ class Patch:
             if not file:
                 raise ValueError("No file provided")
             self.file = file
-            self.offset = Finder(self.file, self.sig).locate()
+            self.offset = Finder(self.file, self.sig).find()
         end_offset = self.offset + len(self.new_bytes)
         logger.debug(
             "Offset {:<8}: {:<18}: patching {} with {}".format(
@@ -212,10 +212,10 @@ class File:
         except pefile.PEFormatError as e:
             raise pefile.PEFormatError("Not a valid Windows application") from e
 
-        if pe.NT_HEADERS.Signature != 0x4550:
+        if pe.NT_HEADERS.Signature != pefile.IMAGE_NT_SIGNATURE:
             raise pefile.PEFormatError("Not a valid PE")
 
-        if pe.FILE_HEADER.Machine == 0x14C:
+        if pe.FILE_HEADER.Machine == pefile.MACHINE_TYPE['IMAGE_FILE_MACHINE_I386']:
             raise pefile.PEFormatError("32 bit Sublime Text not supported")
         return pe
 
@@ -286,13 +286,14 @@ class Finder:
 
             logger.debug("Determined actual offset: %s", hex(self.offset))
 
-    def locate(self):
+    def find(self):
         return self.offset
 
     def get_string(self):
         sample = self.file.data[self.offset : self.offset + self.STR_SAMPLE_LEN]
         return sample[: sample.find(self.NULL)].decode()
 
+    # TODO: could use functions from pefile instead
     def off_to_rva(self, value: int, section: str):
         return (
             value
@@ -308,7 +309,7 @@ class Finder:
         )
 
     @classmethod
-    def get_addr(cls, ref: Ref, matched_bytes):
+    def get_addr(cls, ref: Ref, matched_bytes: bytes):
         rel_addr = matched_bytes[ref.op_size : ref.total_size]
         return int.from_bytes(rel_addr, byteorder="little")
 
@@ -356,6 +357,7 @@ class PatchDB:
             4158,
             4159,
             4160,
+            4164,
         ),
         "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152),
     }
