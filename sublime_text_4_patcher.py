@@ -58,6 +58,7 @@ class PrettyBytes:
 
 
 class Sig:
+    # TODO: could consider combining consecutive expressions into one
     BYTE_RE = b".{1}"
 
     def __init__(self, pattern: str, ref: str = "", offset: int = 0x0, name: str = ""):
@@ -84,6 +85,7 @@ class Patch:
     Replaces bytes
     """
 
+    # TODO: should consider other instruction forms and dynamically assemble
     CALL_LEN = 5  # E8 | xx xx xx xx
     LEA_LEN = 7  # LEA: 48 8D xx | xx xx xx xx
 
@@ -215,7 +217,7 @@ class File:
         if pe.NT_HEADERS.Signature != pefile.IMAGE_NT_SIGNATURE:
             raise pefile.PEFormatError("Not a valid PE")
 
-        if pe.FILE_HEADER.Machine == pefile.MACHINE_TYPE['IMAGE_FILE_MACHINE_I386']:
+        if pe.FILE_HEADER.Machine == pefile.MACHINE_TYPE["IMAGE_FILE_MACHINE_I386"]:
             raise pefile.PEFormatError("32 bit Sublime Text not supported")
         return pe
 
@@ -372,13 +374,28 @@ class PatchDB:
             VERSIONS[version] = channel
 
     OS = ("windows", "macos", "linux")
-    ARCH = ("x64", "x86")
+    ARCH = ("x64", "x86", "ARM64")
 
     def __init__(self, os, arch, version):
-        self.DB = {os: {arch: {} for arch in self.ARCH} for os in self.OS}
+        try:
+            self.channel = self.VERSIONS[version]
+        except KeyError as e:
+            raise KeyError(
+                f"Version {version} does not exist in the patch database"
+            ) from e
+        if os not in self.OS:
+            raise ValueError(f"Unsupported OS {os}")
+        if arch not in self.ARCH:
+            raise ValueError(f"Unsupported architecture {arch}")
         self.os = os
         self.arch = arch
-        self.channel = self.VERSIONS.get(version)
+        self.DB = {
+            os: {
+                arch: {channel: () for channel in list(self.CHANNELS.keys()) + ["base"]}
+                for arch in self.ARCH
+            }
+            for os in self.OS
+        }
         self.load()
 
     def get_patches(self):
@@ -439,9 +456,6 @@ class PatchDB:
                 ),
             )
 
-            self.DB["windows"]["x64"]["dev"] = ()
-            self.DB["windows"]["x64"]["stable"] = ()
-
 
 class Result(NamedTuple):
     version: int = None
@@ -475,8 +489,10 @@ def process_file(filepath, force_patch_channel=None):
 
     try:
         patches = PatchDB("windows", "x64", version).get_patches()
-    except KeyError:
-        e = f"Version {version} does not exist in the patch database"
+    except ValueError as e:
+        logger.error(e)
+        return Result(info=e, version=version)
+    except KeyError as e:
         logger.error(e)
         if force_patch_channel:
             # try the latest version from the specified channel
@@ -486,7 +502,8 @@ def process_file(filepath, force_patch_channel=None):
             )
             patches = PatchDB("windows", "x64", forced_version).get_patches()
         else:
-            logger.error(
+            # TODO: prompt user to force patch
+            logger.warning(
                 "You can still use -f or manually add %d into PatchDB's CHANNELS dictionary if you would like to test it out",
                 version,
             )
@@ -545,9 +562,9 @@ def main():
     force_patch_channel = args.force
     test_path = args.test
 
-    logger.info("-" * BORDER_LEN)
-    logger.info(description)
-    logger.info("-" * BORDER_LEN)
+    print("-" * BORDER_LEN)
+    print(description)
+    print("-" * BORDER_LEN)
 
     if test_path:
         logger.info("Testing using directory %s...", test_path)
@@ -582,18 +599,19 @@ def main():
         try:
             filepath = input(f"Enter file path to {TARGET_PROGRAM}: ")
         except KeyboardInterrupt:
+            print()
             logger.warning("Exiting with KeyboardInterrupt")
             return 1
 
     result = process_file(filepath, force_patch_channel)
 
     if result.success:
-        logger.info("Enjoy! :)")
-        logger.info("-" * BORDER_LEN)
-        logger.info("IMPORTANT: Remember to enter any text as the license key!")
-    logger.info("-" * BORDER_LEN)
-    logger.info(epilog)
-    logger.info("-" * BORDER_LEN)
+        print("Enjoy! :)")
+        print("-" * BORDER_LEN)
+        print("IMPORTANT: Remember to enter any text as the license key!")
+    print("-" * BORDER_LEN)
+    print(epilog)
+    print("-" * BORDER_LEN)
 
     return 0 if result.success else 1
 
