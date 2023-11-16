@@ -146,8 +146,7 @@ class File:
         self.pe.close()
 
         try:
-            # TODO: consider memoryview
-            self.data = bytearray(self.path.read_bytes())
+            self.data = memoryview(bytearray(self.path.read_bytes()))
         except IOError as e:
             raise IOError(f"{self.path} is not a valid file") from e
         else:
@@ -168,7 +167,6 @@ class File:
             raise PermissionError(
                 f"Permission denied renaming file to {backup_path}. Try running as Administrator"
             ) from e
-
         except IOError as e:
             raise IOError(f"Error renaming file to {backup_path}") from e
 
@@ -178,7 +176,6 @@ class File:
             raise PermissionError(
                 f"Permission denied writing to new file {self.path}. Try running as Administrator."
             ) from e
-
         except IOError as e:
             raise IOError(f"Error writing to new file {self.path}") from e
         else:
@@ -190,6 +187,8 @@ class File:
             self.patched_offsets.append(patch.apply())
         logger.info("All patches applied!")
         return self.patched_offsets
+    
+    # TODO: could add apply_patch method
 
     def get_string(self, sig: Sig):
         return Finder(self, sig).get_string()
@@ -217,8 +216,12 @@ class File:
         if pe.NT_HEADERS.Signature != pefile.IMAGE_NT_SIGNATURE:
             raise pefile.PEFormatError("Not a valid PE")
 
-        if pe.FILE_HEADER.Machine == pefile.MACHINE_TYPE["IMAGE_FILE_MACHINE_I386"]:
-            raise pefile.PEFormatError("32 bit Sublime Text not supported")
+        if pe.FILE_HEADER.Machine != pefile.MACHINE_TYPE["IMAGE_FILE_MACHINE_AMD64"]:
+            raise pefile.PEFormatError("Not an x64 PE")
+
+        if not pe.is_exe():
+            raise pefile.PEFormatError("Not a standard EXE")
+
         return pe
 
     def __str__(self):
@@ -293,7 +296,7 @@ class Finder:
 
     def get_string(self):
         sample = self.file.data[self.offset : self.offset + self.STR_SAMPLE_LEN]
-        return sample[: sample.find(self.NULL)].decode()
+        return sample[: sample.tobytes().find(self.NULL)].tobytes().decode()
 
     # TODO: could use functions from pefile instead
     def off_to_rva(self, value: int, section: str):
