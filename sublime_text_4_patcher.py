@@ -12,7 +12,7 @@ import itertools
 from sys import exit
 from pathlib import Path
 from zipfile import ZipFile
-from typing import NamedTuple, Union
+from typing import NamedTuple, Union, Optional, List
 
 
 TARGET_PROGRAM = "sublime_text.exe"
@@ -27,7 +27,7 @@ class SpecialFormatter(logging.Formatter):
         "DEFAULT": "%(levelname)s: %(message)s",
     }
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord):
         orig_fmt = self._fmt
         orig_style = self._style
 
@@ -50,7 +50,7 @@ logger.addHandler(c_handler)
 
 
 class PrettyBytes:
-    def __init__(self, _bytes: str):
+    def __init__(self, _bytes: bytes):
         self.bytes = _bytes
 
     def __str__(self):
@@ -73,11 +73,10 @@ class Sig:
 
     @classmethod
     def process_wildcards(cls, pattern: str):
-        pattern = [
+        return b"".join(
             re.escape(bytes.fromhex(byte)) if byte != "?" else cls.BYTE_RE
             for byte in pattern.split(" ")
-        ]
-        return b"".join(pattern)
+        )
 
 
 class Patch:
@@ -90,15 +89,16 @@ class Patch:
     LEA_LEN = 7  # LEA: 48 8D xx | xx xx xx xx
 
     patch_types = {
-        "nop": "90" * CALL_LEN,
-        "ret": "C3",  # ret
-        "ret0": "48 31 C0 C3",  # xor rax, rax; ret
-        "ret1": "48 31 C0 48 FF C0 C3",  # xor rax, rax; inc rax; ret
+        k: bytes.fromhex(v)
+        for k, v in {
+            "nop": "90" * CALL_LEN,
+            "ret": "C3",  # ret
+            "ret0": "48 31 C0 C3",  # xor rax, rax; ret
+            "ret1": "48 31 C0 48 FF C0 C3",  # xor rax, rax; inc rax; ret
+        }.items()
     }
 
-    patch_types.update((k, bytes.fromhex(v)) for k, v in patch_types.items())
-
-    def __init__(self, sig: Sig, patch_type: str, file: "File" = None):
+    def __init__(self, sig: Sig, patch_type: str, file: Optional["File"] = None):
         self.sig = sig
         if file:
             self.file = file
@@ -110,7 +110,7 @@ class Patch:
         self.patch_type = patch_type
         self.new_bytes = Patch.patch_types[self.patch_type]
 
-    def apply(self, file: "File" = None):
+    def apply(self, file: Optional["File"] = None):
         if not hasattr(self, "file"):
             if not file:
                 raise ValueError("No file provided")
@@ -137,10 +137,7 @@ class File:
     NULL = b"\x00"
 
     def __init__(self, filepath: Union[str, Path]):
-        self.filepath = filepath
-        if isinstance(filepath, str):
-            self.filepath = self.filepath.strip('"')
-        self.path = self.check_path()
+        self.path = self.parse_path(filepath)
         self.pe = self.parse_pe()
         self.sections = {s.Name.strip(self.NULL).decode(): s for s in self.pe.sections}
         self.pe.close()
@@ -150,8 +147,8 @@ class File:
         except IOError as e:
             raise IOError(f"{self.path} is not a valid file") from e
         else:
-            self.patches = []
-            self.patched_offsets = []
+            self.patches: List[Patch] = []
+            self.patched_offsets: List[int] = []
 
     def create_patch(self, patch: Patch):
         patch.__init__(patch.sig, patch.patch_type, self)
@@ -187,18 +184,21 @@ class File:
             self.patched_offsets.append(patch.apply())
         logger.info("All patches applied!")
         return self.patched_offsets
-    
+
     # TODO: could add apply_patch method
 
     def get_string(self, sig: Sig):
         return Finder(self, sig).get_string()
 
-    def check_path(self):
-        path = Path(self.filepath)
+    @staticmethod
+    def parse_path(filepath: Union[str, Path]):
+        if isinstance(filepath, str):
+            filepath = filepath.strip('"')
+        path = Path(filepath)
         if not path.exists():
-            raise FileNotFoundError(f"File {self.filepath} does not exist")
+            raise FileNotFoundError(f"File {filepath} does not exist")
         if not path.is_file():
-            logger.warning("%s is a directory, not a file", self.filepath)
+            logger.warning("%s is a directory, not a file", filepath)
             path = path / TARGET_PROGRAM
             logger.warning("Proceeding with assumed file path %s", path)
             if not path.exists():
@@ -242,12 +242,13 @@ class Finder:
     Determines correct offset
     """
 
-    ref_types = (
-        Ref("call", 5),  # E8 | xx xx xx xx
-        Ref("lea", 7),  # LEA: 48 8D xx | xx xx xx xx
-    )
-
-    ref_types = {r.type: r for r in ref_types}
+    ref_types = {
+        r.type: r
+        for r in (
+            Ref("call", 5),  # E8 | xx xx xx xx
+            Ref("lea", 7),  # LEA: 48 8D xx | xx xx xx xx
+        )
+    }
 
     STR_SAMPLE_LEN = 100
     NULL = b"\x00"
@@ -313,8 +314,8 @@ class Finder:
             + self.file.sections[section].PointerToRawData
         )
 
-    @classmethod
-    def get_addr(cls, ref: Ref, matched_bytes: bytes):
+    @staticmethod
+    def get_addr(ref: Ref, matched_bytes: bytes):
         rel_addr = matched_bytes[ref.op_size : ref.total_size]
         return int.from_bytes(rel_addr, byteorder="little")
 
@@ -461,7 +462,7 @@ class PatchDB:
 
 
 class Result(NamedTuple):
-    version: int = None
+    version: Optional[int] = None
     success: bool = False
     info: str = ""
 
