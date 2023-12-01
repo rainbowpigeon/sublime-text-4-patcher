@@ -1,5 +1,5 @@
 # sublime-text-4-patcher
-Python 3 patcher for Sublime Text v4107-4165 Windows x64
+Python 3 patcher for Sublime Text v4107-4169 Windows x64
 
 Credits for most signatures and patching logic goes to https://github.com/leogx9r
 
