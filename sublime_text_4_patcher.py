@@ -365,8 +365,10 @@ class PatchDB:
             4160,
             4164,
             4165,
+            4167,
+            4168,
         ),
-        "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152),
+        "stable": (4107, 4113, 4121, 4126, 4142, 4143, 4151, 4152, 4166, 4169),
     }
 
     all_versions = tuple(itertools.chain.from_iterable(CHANNELS.values()))
