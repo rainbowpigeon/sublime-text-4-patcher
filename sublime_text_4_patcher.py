@@ -511,6 +511,7 @@ class PatchDB:
             4196,
             4198,
             4199,
+            4205,
         ),
         "stable": (
             4107,
@@ -556,6 +557,7 @@ class PatchDB:
             raise ValueError(f"Unsupported architecture {arch}")
         self.os = os
         self.arch = arch
+        self.version = version
         self.DB = {
             os: {
                 arch: {channel: () for channel in list(self.CHANNELS.keys()) + ["base"]}
@@ -619,6 +621,16 @@ class PatchDB:
                         # ),
                         Sig("e8 ? ? ? ? ? 8b ? ? ? ? ? 85 c0 0f 94 ? ? 74", ref="call"),
                     ),
+                ),
+                *(
+                    (Patch(
+                        "ret1",
+                        Sig(
+                            "41 57 41 56 41 55 41 54 56 57 55 53 48 81 EC 38 02 00 00 4D 89 CF 4C 89 44 24 48 49 89 D6 48 89",
+                            name="license_check_4205",
+                        ),
+                    ),)
+                    if self.version >= 4205 else ()
                 ),
                 Patch(
                     "ret1",
