@@ -22,7 +22,7 @@ jobs:
       new_build_dev: ${{ steps.detect_step.outputs.new_build_dev }}
       new_build_url_dev: ${{ steps.detect_step.outputs.new_build_url_dev }}
       new_build_stable: ${{ steps.detect_step.outputs.new_build_stable }}
-      new_build_url_stable: ${{ steps.detect_step.outputs.new_build_stable_url }}
+      new_build_url_stable: ${{ steps.detect_step.outputs.new_build_url_stable }}
     steps:
       - uses: actions/checkout@v4
 

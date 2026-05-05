@@ -64,6 +64,8 @@ class PrettyBytes:
 class Sig:
     # TODO: could consider combining consecutive expressions into one
     BYTE_RE = b".{1}"
+    # Supports ?{n} (exact n bytes) and ?{min,max} (variable bytes)
+    _QUANT_RE = re.compile(r"^(\?)(\{(\d+)(?:,(\d+))?\})?$")
 
     def __init__(self, pattern: str, ref: str = "", offset: int = 0x0, name: str = ""):
         self.raw_pattern = pattern
@@ -77,10 +79,34 @@ class Sig:
 
     @classmethod
     def process_wildcards(cls, pattern: str):
-        return b"".join(
-            re.escape(bytes.fromhex(byte)) if byte != "?" else cls.BYTE_RE
-            for byte in pattern.split(" ")
-        )
+        result = b""
+        for token in pattern.split(" "):
+            m = cls._QUANT_RE.match(token)
+            if not m:
+                # Validate not a malformed hex token with braces (e.g. "8{1,2}")
+                if token.endswith("}"):
+                    raise ValueError(f"Invalid token '{token}': quantifiers only valid on '?'")
+                result += re.escape(bytes.fromhex(token))
+                continue
+
+            is_wild = m.group(1) == "?"
+            quant = m.group(2)
+
+            if not is_wild:
+                raise ValueError(f"Invalid token '{token}': quantifiers only valid on '?'")
+
+            if quant is None:
+                result += cls.BYTE_RE
+            else:
+                min_n = int(m.group(3))
+                max_n = int(m.group(4)) if m.group(4) else min_n
+                if not (1 <= min_n <= 255 and 1 <= max_n <= 255):
+                    raise ValueError(f"Invalid quantifier '{quant}': values must be 1-255")
+                if min_n > max_n:
+                    raise ValueError(f"Invalid quantifier '{quant}': min > max")
+                result += f".{{{min_n},{max_n}}}".encode()
+
+        return result
 
 
 class Sigs(Sequence):
@@ -604,14 +630,14 @@ class PatchDB:
                     Sigs(
                         "license_check",
                         Sig(
-                            "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
-                            ref="call",
-                            offset=0x3,
-                        ),
-                        Sig(
                             "0f 11 ? ? ? 31 ? 45 31 ? 45 31 ? e8 ? ? ? ?",
                             ref="call",
                             offset=0xD,
+                        ),
+                        Sig(
+                            "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
+                            ref="call",
+                            offset=0x3,
                         ),
                         # Sig(
                         #     "8d ? ? 48 89 ? ? ? 48 89 ? ? ? 48 89 ? e8 ? ? ? ?",
