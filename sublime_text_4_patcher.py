@@ -603,14 +603,14 @@ class PatchDB:
                     Sigs(
                         "license_check",
                         Sig(
-                            "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
-                            ref="call",
-                            offset=0x3,
-                        ),
-                        Sig(
                             "0f 11 ? ? ? 31 ? 45 31 ? 45 31 ? e8 ? ? ? ?",
                             ref="call",
                             offset=0xD,
+                        ),
+                        Sig(
+                            "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
+                            ref="call",
+                            offset=0x3,
                         ),
                         # Sig(
                         #     "8d ? ? 48 89 ? ? ? 48 89 ? ? ? 48 89 ? e8 ? ? ? ?",
