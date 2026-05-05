@@ -718,6 +718,83 @@ def process_file(filepath, force_patch_channel=None):
     return Result(success=True, info=[hex(o) for o in sorted(offsets)], version=version)
 
 
+def test_signatures_only(filepath, force_channel=None):
+    """Test whether each signature can be found without modifying the binary.
+
+    Returns a structured dict with patch results:
+    {
+        "version": 4205,
+        "patches": [
+            {"patch_type": "nop", "sig_name": "invalidate1", "status": "pass"/"fail", ...},
+            ...
+        ],
+        "all_passed": bool
+    }
+    """
+    result = {
+        "version": None,
+        "patches": [],
+        "all_passed": True,
+    }
+
+    sublime = None
+    try:
+        sublime = SublimeText(filepath)
+    except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
+        result["error"] = str(e)
+        return result
+
+    try:
+        version = int(sublime.get_version())
+    except ValueError as e:
+        result["error"] = str(e)
+        return result
+
+    result["version"] = version
+
+    try:
+        patches = PatchDB("windows", "x64", version).get_patches()
+    except KeyError as e:
+        if not force_channel:
+            result["error"] = str(e)
+            return result
+        forced_version = PatchDB.CHANNELS[force_channel][-1]
+        patches = PatchDB("windows", "x64", forced_version).get_patches()
+
+    # Create a fresh File to avoid side effects
+    file = File(filepath)
+
+    for patch in patches:
+        patch_result = {
+            "patch_type": patch.patch_type,
+            "sig_name": patch.sigs.name,
+            "status": "fail",
+            "offset": None,
+            "error": None,
+        }
+
+        found = False
+        for sig in patch.sigs:
+            try:
+                offset = file.find(sig)
+                found = True
+                patch_result["sig_variant"] = sig.name
+                patch_result["offset"] = hex(offset)
+                break
+            except ValueError:
+                continue
+        if not found:
+            patch_result["error"] = f"Could not find any signatures for patch {patch.sigs.name}"
+        else:
+            patch_result["status"] = "pass"
+
+        result["patches"].append(patch_result)
+        if patch_result["status"] == "fail":
+            result["all_passed"] = False
+
+    return result
+
+
 def main():
     BORDER_LEN = 64
 

@@ -1,0 +1,232 @@
+name: Auto-update patch signatures
+
+on:
+  schedule:
+    # Run daily at 09:07 UTC (off-minute to avoid API thundering herd)
+    - cron: "7 9 * * *"
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Sublime Text build number to test"
+        required: false
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      new_build: ${{ steps.check.outputs.new_build }}
+      build_number: ${{ steps.check.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pefile requests
+
+      - name: Detect latest dev build
+        id: check
+        run: |
+          if [ -n "${{ github.event.inputs.build_number }}" ]; then
+            BUILD=${{ github.event.inputs.build_number }}
+          else
+            BUILD=$(python3 -c "
+          import re, requests, sys
+          resp = requests.get('https://www.sublimetext.com/dev', timeout=30)
+          m = re.search(r'sublime_text_build_(\d+)_x64', resp.text)
+          print(m.group(1)) if m else sys.exit(1)
+          ")
+          fi
+
+          if python3 -c "
+          import sublime_text_4_patcher as p
+          exit(0 if $BUILD not in p.PatchDB.all_versions else 1)
+          "; then
+            echo "new_build=true" >> $GITHUB_OUTPUT
+            echo "build_number=$BUILD" >> $GITHUB_OUTPUT
+          else
+            echo "new_build=false" >> $GITHUB_OUTPUT
+          fi
+
+  red-test:
+    needs: detect
+    if: needs.detect.outputs.new_build == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      scan_result: ${{ steps.save-scan.outputs.scan_result }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pefile requests
+
+      - name: Download build
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          mkdir -p downloads/test-builds/build_$BUILD
+          curl -sL "https://download.sublimetext.com/sublime_text_build_${BUILD}_x64.zip" -o "/tmp/build_$BUILD.zip"
+          unzip -j "/tmp/build_$BUILD.zip" "sublime_text.exe" -d "downloads/test-builds/build_$BUILD/"
+
+      - name: Run signature tests
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          python3 scripts/signature_scanner.py test \
+            "downloads/test-builds/build_$BUILD/sublime_text.exe" \
+            --force dev \
+            --output "scan_result_$BUILD.json" || true
+          cat "scan_result_$BUILD.json"
+
+      - name: Save scan result
+        id: save-scan
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          echo "scan_result=$(base64 -w0 scan_result_$BUILD.json)" >> $GITHUB_OUTPUT
+
+      - name: Upload scan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-result-${{ needs.detect.outputs.build_number }}
+          path: scan_result_${{ needs.detect.outputs.build_number }}.json
+
+  extract:
+    needs: [detect, red-test]
+    if: needs.detect.outputs.new_build == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      patch_diff: ${{ steps.save-diff.outputs.patch_diff }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pefile requests
+
+      - name: Download reference build
+        run: |
+          MAX_DEV=$(python3 -c "import sublime_text_4_patcher as p; print(max(p.PatchDB.CHANNELS['dev']))")
+          mkdir -p downloads/ref
+          curl -sL "https://download.sublimetext.com/sublime_text_build_${MAX_DEV}_x64.zip" -o "/tmp/ref.zip"
+          unzip -j "/tmp/ref.zip" "sublime_text.exe" -d "downloads/ref/"
+
+      - name: Download new build
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          mkdir -p downloads/new
+          curl -sL "https://download.sublimetext.com/sublime_text_build_${BUILD}_x64.zip" -o "/tmp/new.zip"
+          unzip -j "/tmp/new.zip" "sublime_text.exe" -d "downloads/new/"
+
+      - name: Download scan result
+        uses: actions/download-artifact@v4
+        with:
+          name: scan-result-${{ needs.detect.outputs.build_number }}
+
+      - name: Extract new signatures
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          python3 scripts/signature_scanner.py extract \
+            --scan-result "scan_result_$BUILD.json" \
+            --new-binary "downloads/new/sublime_text.exe" \
+            --ref-dir downloads \
+            --output "patch_diff_$BUILD.json" || true
+          cat "patch_diff_$BUILD.json"
+
+      - name: Save patch diff
+        id: save-diff
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          echo "patch_diff=$(base64 -w0 patch_diff_$BUILD.json)" >> $GITHUB_OUTPUT
+
+      - name: Upload patch diff artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-diff-${{ needs.detect.outputs.build_number }}
+          path: patch_diff_${{ needs.detect.outputs.build_number }}.json
+
+  validate:
+    needs: [detect, extract]
+    if: needs.detect.outputs.new_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pefile requests
+
+      - name: Download new build
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          mkdir -p downloads/new
+          curl -sL "https://download.sublimetext.com/sublime_text_build_${BUILD}_x64.zip" -o "/tmp/new.zip"
+          unzip -j "/tmp/new.zip" "sublime_text.exe" -d "downloads/new/"
+
+      - name: Download patch diff
+        uses: actions/download-artifact@v4
+        with:
+          name: patch-diff-${{ needs.detect.outputs.build_number }}
+
+      - name: Validate patches
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          python3 scripts/signature_scanner.py validate \
+            --patch-diff "patch_diff_$BUILD.json" \
+            --new-binary "downloads/new/sublime_text.exe" \
+            --force dev
+
+  create-pr:
+    needs: [detect, validate]
+    if: needs.detect.outputs.new_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pefile requests
+
+      - name: Download patch diff
+        uses: actions/download-artifact@v4
+        with:
+          name: patch-diff-${{ needs.detect.outputs.build_number }}
+
+      - name: Apply changes
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          python3 scripts/signature_scanner.py apply \
+            --patch-diff "patch_diff_$BUILD.json" \
+            --channel dev
+
+      - name: Commit and push
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "auto-update/$BUILD"
+          git add sublime_text_4_patcher.py
+          git diff --cached --quiet || git commit -m "auto: add signatures for build $BUILD"
+          git push origin "auto-update/$BUILD"
+
+      - name: Create pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BUILD=${{ needs.detect.outputs.build_number }}
+          gh pr create \
+            --base main \
+            --head "auto-update/$BUILD" \
+            --title "auto: add signatures for build $BUILD" \
+            --body "## Summary
+          - Auto-detected new dev build $BUILD
+          - Extracted new patch signatures via block matching
+          - Validated against new build
+
+          ## Test plan
+          - [ ] Verify patch signatures work for build $BUILD
+          - [ ] Verify no regression for previous builds
+
+          Generated by auto-update-sigs workflow."
