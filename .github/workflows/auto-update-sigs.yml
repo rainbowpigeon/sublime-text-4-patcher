@@ -21,6 +21,8 @@ jobs:
       new_build_found: ${{ steps.detect_step.outputs.new_build_found }}
       new_build_dev: ${{ steps.detect_step.outputs.new_build_dev }}
       new_build_url_dev: ${{ steps.detect_step.outputs.new_build_url_dev }}
+      new_build_stable: ${{ steps.detect_step.outputs.new_build_stable }}
+      new_build_url_stable: ${{ steps.detect_step.outputs.new_build_stable_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.check_result.outputs.has_changes }}
+      sig_changes: ${{ steps.check_result.outputs.sig_changes }}
       build: ${{ steps.download.outputs.build }}
     steps:
       - uses: actions/checkout@v4
@@ -60,20 +63,30 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Cache downloaded binaries
+        uses: actions/cache@v4
+        id: cache-binaries
+        with:
+          path: downloads/
+          key: builds-${{ needs.detect.outputs.new_build_dev }}-${{ hashFiles('sublime_text_4_patcher.py') }}
+
       - name: Download new build
         id: download
+        if: steps.cache-binaries.outputs.cache-hit != 'true'
         run: |
-          mkdir -p downloads
-          curl -fSL -o "downloads/build.zip" "${BUILD_URL}"
           mkdir -p "downloads/build_${BUILD_NUM}"
+          curl -fSL -o "downloads/build_${BUILD_NUM}/build.zip" "${BUILD_URL}"
           cd "downloads/build_${BUILD_NUM}"
-          unzip "../build.zip" sublime_text.exe
+          unzip build.zip sublime_text.exe
+          rm build.zip
           echo "build=${BUILD_NUM}" >> $GITHUB_OUTPUT
         env:
           BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
           BUILD_URL: ${{ needs.detect.outputs.new_build_url_dev }}
 
       - name: Download reference build
+        id: download-ref
+        if: steps.cache-binaries.outputs.cache-hit != 'true'
         run: |
           REF_BUILD=$(python3 -c "
           import importlib.util
@@ -82,10 +95,12 @@ jobs:
           spec.loader.exec_module(m)
           print(max(m.PatchDB.CHANNELS['dev']))
           ")
-          mkdir -p "downloads/ref"
-          curl -fSL -o "downloads/ref/build.zip" "https://download.sublimetext.com/sublime_text_build_${REF_BUILD}_x64.zip"
-          cd downloads/ref
+          mkdir -p "downloads/ref_${REF_BUILD}"
+          curl -fSL -o "downloads/ref_${REF_BUILD}/build.zip" "https://download.sublimetext.com/sublime_text_build_${REF_BUILD}_x64.zip"
+          cd "downloads/ref_${REF_BUILD}"
           unzip build.zip sublime_text.exe
+          rm build.zip
+          echo "${REF_BUILD}" > downloads/ref_build.txt
           echo "Reference build: ${REF_BUILD}"
 
       - name: Red phase - test existing signatures
@@ -101,21 +116,43 @@ jobs:
       - name: Check if all signatures passed
         id: check_result
         run: |
+          BUILD_NUM="${BUILD_NUM}"
           if python3 -c "import json; d=json.load(open('scan_result.json')); exit(0 if d.get('all_passed') else 1)"; then
-            echo "All signatures matched. No changes needed."
-            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "All signatures matched. Checking if build is in CHANNELS..."
+            # Even if signatures pass, the build might not be in CHANNELS
+            IN_CHANNELS=$(python3 -c "
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('p', 'sublime_text_4_patcher.py')
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            v = int('${BUILD_NUM}')
+            print('yes' if v in m.PatchDB.CHANNELS.get('dev',[]) or v in m.PatchDB.CHANNELS.get('stable',[]) else 'no')
+            ")
+            if [ "$IN_CHANNELS" = "no" ]; then
+              echo "Build ${BUILD_NUM} not in CHANNELS. Need to add it."
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "sig_changes=false" >> $GITHUB_OUTPUT
+            else
+              echo "Build already in CHANNELS. No changes needed."
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "sig_changes=false" >> $GITHUB_OUTPUT
+            fi
           else
             FAILED=$(python3 -c "import json; d=json.load(open('scan_result.json')); print(len([p for p in d.get('patches',[]) if p['status']=='fail']))")
             echo "${FAILED} signatures failed. Extracting new signatures..."
             echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "sig_changes=true" >> $GITHUB_OUTPUT
           fi
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
 
       - name: Extract new signatures
-        if: steps.check_result.outputs.has_changes == 'true'
+        if: steps.check_result.outputs.sig_changes == 'true'
         run: |
+          REF_BUILD=$(cat downloads/ref_build.txt)
           python scripts/signature_scanner.py extract \
             --input "downloads/build_${BUILD_NUM}/sublime_text.exe" \
-            --old-input "downloads/ref/sublime_text.exe" \
+            --old-input "downloads/ref_${REF_BUILD}/sublime_text.exe" \
             --result scan_result.json \
             --output patch_diff.json
         env:
@@ -123,11 +160,29 @@ jobs:
         continue-on-error: true
 
       - name: Apply diff to source
-        if: steps.check_result.outputs.has_changes == 'true'
+        if: steps.check_result.outputs.sig_changes == 'true'
         run: |
           python scripts/signature_scanner.py apply \
             --diff patch_diff.json \
             --target sublime_text_4_patcher.py
+
+      - name: Add build to CHANNELS (no sig changes needed)
+        if: steps.check_result.outputs.sig_changes == 'false'
+        run: |
+          python scripts/signature_scanner.py apply \
+            --diff <(python3 -c "
+          import json
+          print(json.dumps({
+              'build': int('${BUILD_NUM}'),
+              'channel': 'dev' if int('${BUILD_NUM}') % 2 else 'stable',
+              'changes': [],
+              'version_updates': {
+                  'add_to_channels': {'dev': [int('${BUILD_NUM}')] if int('${BUILD_NUM}') % 2 else []}
+              }
+          }))
+          ")
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
 
       - name: Verify source still loads
         if: steps.check_result.outputs.has_changes == 'true'
@@ -141,7 +196,7 @@ jobs:
           "
 
       - name: Green phase - re-test with new signatures
-        if: steps.check_result.outputs.has_changes == 'true'
+        if: steps.check_result.outputs.sig_changes == 'true'
         run: |
           python scripts/signature_scanner.py test \
             --input "downloads/build_${BUILD_NUM}/sublime_text.exe" \
@@ -150,10 +205,11 @@ jobs:
           BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
 
       - name: Regression test - reference build still works
-        if: steps.check_result.outputs.has_changes == 'true'
+        if: steps.check_result.outputs.sig_changes == 'true'
         run: |
+          REF_BUILD=$(cat downloads/ref_build.txt)
           python scripts/signature_scanner.py test \
-            --input "downloads/ref/sublime_text.exe" \
+            --input "downloads/ref_${REF_BUILD}/sublime_text.exe" \
             --output regression_result.json
 
       - name: Upload scan results
@@ -193,6 +249,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH="auto/update-build-${BUILD_NUM}"
+          # Check if PR already exists
           EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -n "$EXISTING" ]; then
             echo "PR already exists: #${EXISTING}"

@@ -407,9 +407,11 @@ def apply_diff_to_source(diff: dict, source_path: str | None = None) -> None:
             pattern = rf'("{channel}":\s*\(\n(?:[^\)]*\n)*)(\s*\))'
             match = re.search(pattern, source)
             if match:
-                # Add version in sorted order
+                # Detect indentation from existing entries
+                existing_line = re.search(rf'({channel}":\s*\(\n)(\s+)', match.group())
+                indent = existing_line.group(2) if existing_line else "            "
                 insert_pos = match.end(1)
-                new_version = f"        {version},\n"
+                new_version = f"{indent}{version},\n"
                 source = (
                     source[:insert_pos] + new_version + source[insert_pos:]
                 )
