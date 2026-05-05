@@ -660,6 +660,67 @@ class Result(NamedTuple):
         return f"Version {self.version}: {status}: {self.info}"
 
 
+def test_signatures_only(filepath, force_patch_channel=None):
+    """
+    Test whether all signatures can be found WITHOUT applying patches.
+    Returns structured dict with per-patch results.
+    """
+    sublime = None
+    try:
+        sublime = SublimeText(filepath)
+    except (FileNotFoundError, pefile.PEFormatError, IOError) as e:
+        return {"error": str(e), "version": None}
+
+    try:
+        version = int(sublime.get_version())
+    except ValueError as e:
+        return {"error": str(e), "version": None}
+
+    try:
+        patches = PatchDB("windows", "x64", version).get_patches()
+    except KeyError:
+        if force_patch_channel:
+            forced_version = PatchDB.CHANNELS[force_patch_channel][-1]
+            patches = PatchDB("windows", "x64", forced_version).get_patches()
+        else:
+            return {"error": f"Version {version} not in CHANNELS", "version": version}
+    except ValueError as e:
+        return {"error": str(e), "version": version}
+
+    results = []
+    for patch in patches:
+        last_error = None
+        matched = False
+        for sig in patch.sigs:
+            try:
+                offset = sublime.find(sig)
+                results.append({
+                    "patch_type": patch.patch_type,
+                    "sig_name": sig.name,
+                    "status": "pass",
+                    "offset": hex(offset),
+                })
+                matched = True
+                break
+            except ValueError as e:
+                last_error = str(e)
+
+        if not matched:
+            # No signature matched — report failure on the primary sig
+            results.append({
+                "patch_type": patch.patch_type,
+                "sig_name": patch.sigs[0].name,
+                "status": "fail",
+                "error": last_error,
+            })
+
+    return {
+        "version": version,
+        "patches": results,
+        "all_passed": all(r["status"] == "pass" for r in results),
+    }
+
+
 def process_file(filepath, force_patch_channel=None):
     sublime = None
     try:

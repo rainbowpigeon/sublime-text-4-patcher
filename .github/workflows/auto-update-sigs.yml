@@ -1,0 +1,217 @@
+name: Auto-update patch signatures
+
+on:
+  schedule:
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Optional specific build number to test"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      new_build_found: ${{ steps.detect_step.outputs.new_build_found }}
+      new_build_dev: ${{ steps.detect_step.outputs.new_build_dev }}
+      new_build_url_dev: ${{ steps.detect_step.outputs.new_build_url_dev }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Detect new builds
+        id: detect_step
+        run: |
+          if [ -n "${BUILD_NUM}" ]; then
+            echo "Using manually specified build: ${BUILD_NUM}"
+            echo "new_build_found=true" >> $GITHUB_OUTPUT
+            echo "new_build_dev=${BUILD_NUM}" >> $GITHUB_OUTPUT
+            echo "new_build_url_dev=https://download.sublimetext.com/sublime_text_build_${BUILD_NUM}_x64.zip" >> $GITHUB_OUTPUT
+          else
+            python scripts/signature_scanner.py detect
+          fi
+        env:
+          BUILD_NUM: ${{ inputs.build_number }}
+
+  test_and_extract:
+    needs: detect
+    if: needs.detect.outputs.new_build_found == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check_result.outputs.has_changes }}
+      build: ${{ steps.download.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Download new build
+        id: download
+        run: |
+          mkdir -p downloads
+          curl -fSL -o "downloads/build.zip" "${BUILD_URL}"
+          mkdir -p "downloads/build_${BUILD_NUM}"
+          cd "downloads/build_${BUILD_NUM}"
+          unzip "../build.zip" sublime_text.exe
+          echo "build=${BUILD_NUM}" >> $GITHUB_OUTPUT
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+          BUILD_URL: ${{ needs.detect.outputs.new_build_url_dev }}
+
+      - name: Download reference build
+        run: |
+          REF_BUILD=$(python3 -c "
+          import importlib.util
+          spec = importlib.util.spec_from_file_location('p', 'sublime_text_4_patcher.py')
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          print(max(m.PatchDB.CHANNELS['dev']))
+          ")
+          mkdir -p "downloads/ref"
+          curl -fSL -o "downloads/ref/build.zip" "https://download.sublimetext.com/sublime_text_build_${REF_BUILD}_x64.zip"
+          cd downloads/ref
+          unzip build.zip sublime_text.exe
+          echo "Reference build: ${REF_BUILD}"
+
+      - name: Red phase - test existing signatures
+        id: red_test
+        run: |
+          python scripts/signature_scanner.py test \
+            --input "downloads/build_${BUILD_NUM}/sublime_text.exe" \
+            --output scan_result.json
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+        continue-on-error: true
+
+      - name: Check if all signatures passed
+        id: check_result
+        run: |
+          if python3 -c "import json; d=json.load(open('scan_result.json')); exit(0 if d.get('all_passed') else 1)"; then
+            echo "All signatures matched. No changes needed."
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            FAILED=$(python3 -c "import json; d=json.load(open('scan_result.json')); print(len([p for p in d.get('patches',[]) if p['status']=='fail']))")
+            echo "${FAILED} signatures failed. Extracting new signatures..."
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract new signatures
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          python scripts/signature_scanner.py extract \
+            --input "downloads/build_${BUILD_NUM}/sublime_text.exe" \
+            --old-input "downloads/ref/sublime_text.exe" \
+            --result scan_result.json \
+            --output patch_diff.json
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+        continue-on-error: true
+
+      - name: Apply diff to source
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          python scripts/signature_scanner.py apply \
+            --diff patch_diff.json \
+            --target sublime_text_4_patcher.py
+
+      - name: Verify source still loads
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          python3 -c "
+          import importlib.util
+          spec = importlib.util.spec_from_file_location('p', 'sublime_text_4_patcher.py')
+          m = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(m)
+          print('Source loads OK')
+          "
+
+      - name: Green phase - re-test with new signatures
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          python scripts/signature_scanner.py test \
+            --input "downloads/build_${BUILD_NUM}/sublime_text.exe" \
+            --output green_result.json
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+
+      - name: Regression test - reference build still works
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          python scripts/signature_scanner.py test \
+            --input "downloads/ref/sublime_text.exe" \
+            --output regression_result.json
+
+      - name: Upload scan results
+        if: always() && steps.check_result.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results
+          path: |
+            scan_result.json
+            green_result.json
+            regression_result.json
+            patch_diff.json
+
+      - name: Update README version
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          sed -i "s/v4107-[0-9]*/v4107-${BUILD_NUM}/" README.md
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+
+      - name: Commit and push
+        if: steps.check_result.outputs.has_changes == 'true'
+        run: |
+          BRANCH="auto/update-build-${BUILD_NUM}"
+          git checkout -b "$BRANCH"
+          git add sublime_text_4_patcher.py README.md
+          git -c user.name="Claude Mythos" -c user.email="noreply@anthropic.com" \
+            commit -m "auto: support build ${BUILD_NUM}" || echo "No changes to commit"
+          git push origin "$BRANCH" --force
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+
+      - name: Create pull request
+        if: steps.check_result.outputs.has_changes == 'true'
+        env:
+          BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="auto/update-build-${BUILD_NUM}"
+          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            echo "PR already exists: #${EXISTING}"
+            exit 0
+          fi
+          gh pr create \
+            --title "auto: support build ${BUILD_NUM}" \
+            --body "## Summary
+          - Auto-generated patch signature update for Sublime Text build ${BUILD_NUM}
+          - Signatures extracted via binary block-matching
+
+          ## Test plan
+          - [ ] Red phase: existing signatures tested against build ${BUILD_NUM}
+          - [ ] Green phase: new signatures verified against build ${BUILD_NUM}
+          - [ ] Regression: signatures verified against reference build
+
+          ## Changes
+          - Updated patch signatures
+          - Added build to CHANNELS
+          - Updated README version range" \
+            --head "$BRANCH" \
+            --base main
