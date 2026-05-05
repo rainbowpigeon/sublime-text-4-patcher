@@ -76,9 +76,8 @@ jobs:
         run: |
           mkdir -p "downloads/build_${BUILD_NUM}"
           curl -fSL -o "downloads/build_${BUILD_NUM}/build.zip" "${BUILD_URL}"
-          cd "downloads/build_${BUILD_NUM}"
-          unzip build.zip sublime_text.exe
-          rm build.zip
+          unzip -o -d "downloads/build_${BUILD_NUM}" "downloads/build_${BUILD_NUM}/build.zip" sublime_text.exe
+          rm "downloads/build_${BUILD_NUM}/build.zip"
           echo "build=${BUILD_NUM}" >> $GITHUB_OUTPUT
         env:
           BUILD_NUM: ${{ needs.detect.outputs.new_build_dev }}
@@ -97,9 +96,8 @@ jobs:
           ")
           mkdir -p "downloads/ref_${REF_BUILD}"
           curl -fSL -o "downloads/ref_${REF_BUILD}/build.zip" "https://download.sublimetext.com/sublime_text_build_${REF_BUILD}_x64.zip"
-          cd "downloads/ref_${REF_BUILD}"
-          unzip build.zip sublime_text.exe
-          rm build.zip
+          unzip -o -d "downloads/ref_${REF_BUILD}" "downloads/ref_${REF_BUILD}/build.zip" sublime_text.exe
+          rm "downloads/ref_${REF_BUILD}/build.zip"
           echo "${REF_BUILD}" > downloads/ref_build.txt
           echo "Reference build: ${REF_BUILD}"
 
