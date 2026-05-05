@@ -119,12 +119,12 @@ jobs:
             echo "All signatures matched. Checking if build is in CHANNELS..."
             # Even if signatures pass, the build might not be in CHANNELS
             IN_CHANNELS=$(python3 -c "
-            import importlib.util
-            spec = importlib.util.spec_from_file_location('p', 'sublime_text_4_patcher.py')
-            m = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(m)
-            v = int('${BUILD_NUM}')
-            print('yes' if v in m.PatchDB.CHANNELS.get('dev',[]) or v in m.PatchDB.CHANNELS.get('stable',[]) else 'no')
+import importlib.util
+spec = importlib.util.spec_from_file_location('p', 'sublime_text_4_patcher.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+v = int('${BUILD_NUM}')
+print('yes' if v in m.PatchDB.CHANNELS.get('dev',[]) or v in m.PatchDB.CHANNELS.get('stable',[]) else 'no')
             ")
             if [ "$IN_CHANNELS" = "no" ]; then
               echo "Build ${BUILD_NUM} not in CHANNELS. Need to add it."
