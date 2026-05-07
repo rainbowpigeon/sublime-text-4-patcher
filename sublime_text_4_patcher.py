@@ -600,24 +600,9 @@ class PatchDB:
                 ),
                 Patch(
                     "ret0",
-                    Sigs(
-                        "license_check",
-                        Sig(
-                            "45 31 ? e8 ? ? ? ? 85 c0 75 ? ? 8d",
-                            ref="call",
-                            offset=0x3,
-                        ),
-                        Sig(
-                            "0f 11 ? ? ? 31 ? 45 31 ? 45 31 ? e8 ? ? ? ?",
-                            ref="call",
-                            offset=0xD,
-                        ),
-                        # Sig(
-                        #     "8d ? ? 48 89 ? ? ? 48 89 ? ? ? 48 89 ? e8 ? ? ? ?",
-                        #     offset=0x10,
-                        #     ref="call",
-                        # ),
-                        Sig("e8 ? ? ? ? ? 8b ? ? ? ? ? 85 c0 0f 94 ? ? 74", ref="call"),
+                    Sig(
+                        "41 57 41 56 56 57 53 48 81 ec e0 04 00 00 0f 29 b4 24 d0 04 00 00 48 89 cb 48 8d 0d ? ? ? 00 e8 ? ? 06 00 48 8d bc 24 d0 00 00 00 48 89",
+                        name="license_check",
                     ),
                 ),
                 Patch(
