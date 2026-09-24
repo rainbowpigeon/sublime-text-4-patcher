@@ -532,6 +532,10 @@ class PatchDB:
             4205,
             4206,
             4207,
+            4210,
+            4211,
+            4212,
+            4214,
         ),
         "stable": (
             4107,
@@ -549,6 +553,7 @@ class PatchDB:
             4189,
             4192,
             4200,
+            4213,
         ),
     }
 
@@ -619,9 +624,11 @@ class PatchDB:
                 Patch(
                     # valid enum
                     "ret280"
-                    if self.version >= 4206
+                    if self.version >= 4214
+                    else "ret280"
+                    if self.version in (4206, 4207, 4211, 4212)
                     else "ret1"
-                    if self.version == 4205
+                    if self.version in (4205, 4210)
                     else "ret0",
                     Sigs(
                         "license_validate",
