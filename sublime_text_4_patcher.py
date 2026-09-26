@@ -554,6 +554,7 @@ class PatchDB:
             4192,
             4200,
             4213,
+            4215,
         ),
     }
 
@@ -623,12 +624,10 @@ class PatchDB:
                 ),
                 Patch(
                     # valid enum
-                    "ret280"
-                    if self.version >= 4214
-                    else "ret280"
-                    if self.version in (4206, 4207, 4211, 4212)
-                    else "ret1"
+                    "ret1"
                     if self.version in (4205, 4210)
+                    else "ret280"
+                    if self.version >= 4206 and self.channel == "dev"
                     else "ret0",
                     Sigs(
                         "license_validate",

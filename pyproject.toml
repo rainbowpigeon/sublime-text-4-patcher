@@ -1,7 +1,7 @@
 [project]
 name = "sublime-text-4-patcher"
 version = "0.1.0"
-description = "Python 3 patcher for Sublime Text v4107-4214 Windows x64"
+description = "Python 3 patcher for Sublime Text v4107-4215 Windows x64"
 authors = [
     {name = "rainbowpigeon", email = "113040852+rainbowpigeon@users.noreply.github.com"}
 ]
