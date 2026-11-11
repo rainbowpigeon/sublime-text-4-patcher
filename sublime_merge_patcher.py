@@ -467,6 +467,7 @@ class PatchDB:
         "dev": (),
         "stable": (
             2132,
+            2136,
         ),
     }
 
@@ -536,7 +537,7 @@ class PatchDB:
                 ),
                 Patch(
                     # valid enum
-                    "ret281",
+                    "ret281" if self.version == 2132 else "ret0",
                     Sigs(
                         "license_validate",
                         # callsite head
